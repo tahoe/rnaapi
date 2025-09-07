@@ -1,0 +1,8 @@
+[package]
+name = "rnaapi"
+version = "0.1.0"
+edition = "2024"
+description = "NetActuate API client library"
+license = "MIT"
+
+[dependencies]
