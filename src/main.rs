@@ -34,8 +34,7 @@ async fn main() -> Result<()> {
         .send()
         .await;
     let res_str = api_result.expect("bleh").text().await;
-    let res_str = res_str.expect("this is a test");
-    // let res_json: Value = serde_json::from_str(&res_str);
-    println!("{res_str}");
+    let res_json: Value = serde_json::from_str(&res_str.expect("blah")).expect("blah");
+    println!("{:#}", res_json);
     Ok(())
 }
