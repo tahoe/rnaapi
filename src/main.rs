@@ -36,7 +36,7 @@ async fn main() -> reqwest::Result<()> {
     let api_result = test_client
         .expect("lb")
         .get(format!(
-            "https://vapi2.netactuate.com/api/cloud/servers?key={api_key}"
+            "https://vapi2.netactuate.com/api/cloud/server/?key={api_key}&mbpkgid=571543"
         ))
         .send()
         .await?;
