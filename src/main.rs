@@ -1,3 +1,23 @@
+//! Rust library for talking to the NetActuate API
+//!
+//! This library provides the methods for establishing a connection
+//! and for retrieving data from as many endpoints as I feel like
+//! writing support for.
+//!
+//! It also will include an example app written in some CLI framework
+//! that will be interactive to some extent, maybe...
+//!
+//! # Usage
+//!
+//! First, let me finish this thang, but you'll need to do a `cargo add rnaapi`
+//! to get started. Right now, all you can do is `cargo install rnaapi`
+//! and use the example application with it's very limited functionality...
+//!
+//! Help output:
+//! ```
+//! No clue yet
+//! ```
+//!
 use clap::Parser;
 use reqwest::{Client, ClientBuilder, Error, Response};
 use reqwest_hickory_resolver::HickoryResolver;
@@ -10,7 +30,7 @@ use std::sync::Arc;
 Keys we care about in the api return for single items
 {
     "code": 200,
-    "data": [{dict1:value}, {dict2:value}...],
+    "data": {items:dict,...}
     "result": "success"
 }
 
@@ -27,6 +47,15 @@ We should have a set of types that lets us represent these parts at least.
 
 #[tokio::main]
 async fn main() -> reqwest::Result<()> {
+    //! Test/Example "main" function, right now it just takes
+    //! one argument, `-m <mbpkgid>` if not given, returns all the servers you own
+    //!
+    //! What makes this whole thing really annoying is that the "list" of servers,
+    //! retrieved at the endpoint /servers, returns a list of servers that are not
+    //! quite the same as the individual servers returned by /server/&mbpkgid=id
+    //!
+    //! So it's going to be fun figuring out how to represent them in Rust Structs
+
     // Get our env settings
     dotenv::dotenv().ok();
 
@@ -35,7 +64,7 @@ async fn main() -> reqwest::Result<()> {
     let mut servers: &str = "servers";
 
     // parse our args into args
-    let args = Args::parse();
+    let args = SimpleArgs::parse();
 
     if args.mbpkgid >= 1 {
         mbpkgid = args.mbpkgid;
@@ -63,11 +92,11 @@ async fn main() -> reqwest::Result<()> {
 }
 
 ///
-/// This is the Args struct
+/// This is the SimpleArgs struct
 ///
 #[derive(Parser, Debug)]
 #[command(version, about)]
-struct Args {
+struct SimpleArgs {
     // -m argument for picking an mbpkgid
     #[arg(short, long, default_value_t = 0)]
     mbpkgid: i32,
