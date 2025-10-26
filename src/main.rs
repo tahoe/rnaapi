@@ -31,19 +31,15 @@ async fn main() -> reqwest::Result<()> {
     dotenv::dotenv().ok();
 
     // Defaults
-    let single: bool = false;
-    let mbpkgid: i32 = 0;
-    let servers: &str = "servers";
-    let mbpkgid_str: &str = "&mbpkgid=";
+    let mut mbpkgid: i32 = 0;
+    let mut servers: &str = "servers";
 
     // parse our args into args
     let args = Args::parse();
 
     if args.mbpkgid >= 1 {
-        let mbpkgid: i32 = args.mbpkgid;
-        let servers: &str = "server";
-    } else {
-        let single: bool = true;
+        mbpkgid = args.mbpkgid;
+        servers = "server";
     }
 
     // build the client to use local resolver, IE Ipv4
