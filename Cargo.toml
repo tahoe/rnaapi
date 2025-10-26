@@ -7,7 +7,7 @@ license = "MIT"
 
 [dependencies]
 dotenv = "0.15.0"
-hickory-resolver = "*"
+hickory-resolver = "0.25.2"
 reqwest = { version = "0.12.23", features = ["blocking"]}
 reqwest-hickory-resolver = "0.2.0"
 serde_json = "1.0.145"
