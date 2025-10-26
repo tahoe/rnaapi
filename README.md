@@ -1,2 +1,2 @@
 # rnaapi
-NetActuate Rust Client API Library
+NetActuate API Openapi spec
