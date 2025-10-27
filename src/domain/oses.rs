@@ -1,3 +1,5 @@
+#[derive(Clone, Debug, PartialEq)]
+pub struct Os {}
 /*
 // OS is a struct for storing the attributes of an OS
 type OS struct {

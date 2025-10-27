@@ -1,3 +1,5 @@
+#[derive(Clone, Debug, PartialEq)]
+pub struct Location {}
 /*
 
 // Location is an API response message of available deployment locations

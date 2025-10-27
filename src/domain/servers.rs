@@ -1,3 +1,6 @@
+#[derive(Clone, Debug, PartialEq)]
+pub struct Server {}
+
 /*
 // Server struct defines what a VPS looks like
 type Server struct {

@@ -1,3 +1,5 @@
+#[derive(Clone, Debug, PartialEq)]
+pub struct Plan {}
 /*
 
 // Plan struct defines the purchaceable plans/packages

@@ -1,3 +1,5 @@
+#[derive(Clone, Debug, PartialEq)]
+pub struct Package {}
 /*
 
 import "strconv"

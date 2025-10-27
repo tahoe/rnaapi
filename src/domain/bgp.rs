@@ -1,3 +1,5 @@
+#[derive(Clone, Debug, PartialEq)]
+pub struct Bgp {}
 /*
 type BGPSession struct {
     ID             int         `json:"id"`
