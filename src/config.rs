@@ -28,8 +28,3 @@ fn set_key() -> String {
     }
     apikey
 }
-
-pub mod prod {
-    pub const API_ADDRESS: &str = "vapi2.netactuate.com/api/cloud/";
-    pub const API_KEY: &str = "";
-}

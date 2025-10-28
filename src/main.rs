@@ -19,7 +19,7 @@
 //! ```
 //!
 use clap::Parser;
-use rnaapi::config::{API_ADDRESS, API_KEY};
+use rnaapi::config;
 use rnaapi::Application;
 use serde::Serialize;
 use serde_json::{Result, Value};
@@ -51,7 +51,7 @@ async fn main() -> reqwest::Result<()> {
     }
 
     // playing with new constructor for client
-    let test_client = Application::new(API_ADDRESS.to_owned()).await;
+    let test_client = Application::new(config::API_ADDRESS.to_owned()).await;
 
     // let test_client = Arc::new(Client::builder().dns_resolver(resolver).build());
     let api_result = test_client
@@ -59,7 +59,7 @@ async fn main() -> reqwest::Result<()> {
         .get(format!(
             "{}/{servers}/?key={}&mbpkgid={mbpkgid}",
             test_client.address,
-            API_KEY.to_owned()
+            config::API_KEY.to_owned()
         ))
         .send()
         .await?;
