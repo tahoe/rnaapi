@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Os {}
 /*

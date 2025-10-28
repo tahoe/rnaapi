@@ -1,5 +1,67 @@
+#![allow(clippy::too_many_arguments)]
+
 #[derive(Clone, Debug, PartialEq)]
-pub struct Server {}
+pub struct Server {
+    pub city: String,
+    pub domu_package: u32,
+    pub fqdn: String,
+    pub mbpkgid: u32,
+    pub os_id: u32,
+    pub location_id: u32,
+    pub ip: String,
+    pub ipv6: String,
+    pub plan_id: u32,
+    pub pkg_id: u32,
+    pub state: String,
+    pub status: String,
+    pub uptime: String,
+    pub vcpus: u32,
+    pub installed: bool,
+    pub nic1_mac: String,
+    pub nic2_mac: String,
+}
+
+impl Server {
+    pub fn new(
+        city: String,
+        domu_package: u32,
+        fqdn: String,
+        mbpkgid: u32,
+        os_id: u32,
+        location_id: u32,
+        ip: String,
+        ipv6: String,
+        plan_id: u32,
+        pkg_id: u32,
+        state: String,
+        status: String,
+        uptime: String,
+        vcpus: u32,
+        installed: bool,
+        nic1_mac: String,
+        nic2_mac: String,
+    ) -> Self {
+        Self {
+            city,
+            domu_package,
+            fqdn,
+            mbpkgid,
+            os_id,
+            location_id,
+            ip,
+            ipv6,
+            plan_id,
+            pkg_id,
+            state,
+            status,
+            uptime,
+            vcpus,
+            installed,
+            nic1_mac,
+            nic2_mac,
+        }
+    }
+}
 
 /*
 // Server struct defines what a VPS looks like

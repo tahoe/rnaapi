@@ -19,11 +19,11 @@
 //! ```
 //!
 use clap::Parser;
-use reqwest::{Client, ClientBuilder, Error, Response};
-use reqwest_hickory_resolver::HickoryResolver;
+use rnaapi::Application;
 use serde::Serialize;
 use serde_json::{Result, Value};
 use std::env;
+use std::fmt::format;
 use std::sync::Arc;
 
 /*
@@ -71,17 +71,16 @@ async fn main() -> reqwest::Result<()> {
         servers = "server";
     }
 
-    // build the client to use local resolver, IE Ipv4
-    let mut builder = ClientBuilder::new();
-    builder = builder.dns_resolver(Arc::new(HickoryResolver::default()));
-    let test_client = builder.build();
+    // playing with new constructor for client
+    let test_client = Application::new("vapi2.netactuate.com/api/cloud/".to_owned()).await;
 
     // let test_client = Arc::new(Client::builder().dns_resolver(resolver).build());
     let api_key = std::env::var("API_KEY").expect("Need to have API_KEY set in .env");
     let api_result = test_client
-        .expect("lb")
+        .http_client
         .get(format!(
-            "https://vapi2.netactuate.com/api/cloud/{servers}/?key={api_key}&mbpkgid={mbpkgid}"
+            "https://{}/{servers}/?key={api_key}&mbpkgid={mbpkgid}",
+            test_client.address
         ))
         .send()
         .await?;
