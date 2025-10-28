@@ -27,25 +27,6 @@ use std::env;
 use std::fmt::format;
 use std::sync::Arc;
 
-/*
-Keys we care about in the api return for single items
-{
-    "code": 200,
-    "data": {items:dict,...}
-    "result": "success"
-}
-
-Keys we care about for list endpoints
-{
-    "code": 200,
-    "data": [{dict1:value}, {dict2:value}...],
-    "result": "success"
-    "meta": {pagination_info...}
-}
-
-We should have a set of types that lets us represent these parts at least.
-*/
-
 #[tokio::main]
 async fn main() -> reqwest::Result<()> {
     //! Test/Example "main" function, right now it just takes
