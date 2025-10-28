@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::sync::Arc;
 
+pub mod config;
 pub mod domain;
 
 pub struct Application {

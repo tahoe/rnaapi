@@ -19,6 +19,7 @@
 //! ```
 //!
 use clap::Parser;
+use rnaapi::config::{API_ADDRESS, API_KEY};
 use rnaapi::Application;
 use serde::Serialize;
 use serde_json::{Result, Value};
@@ -56,9 +57,6 @@ async fn main() -> reqwest::Result<()> {
     //!
     //! So it's going to be fun figuring out how to represent them in Rust Structs
 
-    // Get our env settings
-    dotenv::dotenv().ok();
-
     // Defaults
     let mut mbpkgid: i32 = 0;
     let mut servers: &str = "servers";
@@ -72,15 +70,15 @@ async fn main() -> reqwest::Result<()> {
     }
 
     // playing with new constructor for client
-    let test_client = Application::new("vapi2.netactuate.com/api/cloud/".to_owned()).await;
+    let test_client = Application::new(API_ADDRESS.to_owned()).await;
 
     // let test_client = Arc::new(Client::builder().dns_resolver(resolver).build());
-    let api_key = std::env::var("API_KEY").expect("Need to have API_KEY set in .env");
     let api_result = test_client
         .http_client
         .get(format!(
-            "https://{}/{servers}/?key={api_key}&mbpkgid={mbpkgid}",
-            test_client.address
+            "{}/{servers}/?key={}&mbpkgid={mbpkgid}",
+            test_client.address,
+            API_KEY.to_owned()
         ))
         .send()
         .await?;
