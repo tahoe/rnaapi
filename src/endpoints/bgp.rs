@@ -1,7 +1,21 @@
-#![allow(clippy::too_many_arguments)]
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Bgp {}
+// #![allow(clippy::too_many_arguments, non_snake_case)]
+// use serde::{Deserialize, Serialize};
+//
+// #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+// pub struct BgpData {
+//     pub result: String,
+//     pub data: Bgp,
+// }
+//
+// #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+// pub struct BgpsData {
+//     pub result: String,
+//     pub data: Vec<Bgp>,
+// }
+//
+// #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+// #[serde(rename_all = "snake_case")]
+// pub struct Bgp {}
 /*
 type BGPSession struct {
     ID             int         `json:"id"`

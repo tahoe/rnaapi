@@ -3,11 +3,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ServerData {
+    pub result: String,
     pub data: Server,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ServersData {
+    pub result: String,
     pub data: Vec<Server>,
 }
 
@@ -32,45 +34,45 @@ pub struct Server {
     pub nic2_mac: String,
 }
 
-impl Server {
-    pub fn new(
-        city: String,
-        domU_package: u32,
-        fqdn: String,
-        mbpkgid: u32,
-        os_id: u32,
-        location_id: u32,
-        ip: String,
-        ipv6: String,
-        plan_id: u32,
-        pkg_id: u32,
-        state: String,
-        status: String,
-        uptime: String,
-        installed: u32,
-        nic1_mac: String,
-        nic2_mac: String,
-    ) -> Self {
-        Self {
-            city,
-            domU_package,
-            fqdn,
-            mbpkgid,
-            os_id,
-            location_id,
-            ip,
-            ipv6,
-            plan_id,
-            pkg_id,
-            state,
-            status,
-            uptime,
-            installed,
-            nic1_mac,
-            nic2_mac,
-        }
-    }
-}
+// impl Server {
+//     pub fn new(
+//         city: String,
+//         domU_package: u32,
+//         fqdn: String,
+//         mbpkgid: u32,
+//         os_id: u32,
+//         location_id: u32,
+//         ip: String,
+//         ipv6: String,
+//         plan_id: u32,
+//         pkg_id: u32,
+//         state: String,
+//         status: String,
+//         uptime: String,
+//         installed: u32,
+//         nic1_mac: String,
+//         nic2_mac: String,
+//     ) -> Self {
+//         Self {
+//             city,
+//             domU_package,
+//             fqdn,
+//             mbpkgid,
+//             os_id,
+//             location_id,
+//             ip,
+//             ipv6,
+//             plan_id,
+//             pkg_id,
+//             state,
+//             status,
+//             uptime,
+//             installed,
+//             nic1_mac,
+//             nic2_mac,
+//         }
+//     }
+// }
 
 /*
 // Server struct defines what a VPS looks like

@@ -1,7 +1,30 @@
-#![allow(clippy::too_many_arguments)]
+#![allow(clippy::too_many_arguments, non_snake_case)]
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Location {}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LocationData {
+    pub result: String,
+    pub data: Location,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LocationsData {
+    pub result: String,
+    pub data: Vec<Location>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct Location {
+    pub id: u32,
+    pub name: String,
+    pub iata_code: String,
+    pub continent: String,
+    pub flag: String,
+    pub latitude: String,
+    pub longitude: String,
+    pub disabled: u32,
+}
 /*
 
 // Location is an API response message of available deployment locations

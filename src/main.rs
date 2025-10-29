@@ -65,12 +65,27 @@ async fn main() -> reqwest::Result<()> {
             api_result.data.fqdn, api_result.data.mbpkgid
         );
     } else {
-        let api_result = na_client.get_servers().await;
-        let api_result = api_result.unwrap();
-        for srvr in api_result.data {
-            println!("fqdn: {}, mbpkgid: {}", srvr.fqdn, srvr.mbpkgid);
+        let srvrs_result = na_client.get_servers().await;
+        let srvrs_result = srvrs_result.unwrap();
+        for srvr in srvrs_result.data {
+            println!(
+                "{}! fqdn: {}, mbpkgid: {}",
+                srvrs_result.result, srvr.fqdn, srvr.mbpkgid
+            );
         }
     }
+
+    println!();
+    // list locations
+    let locs_result = na_client.get_locations().await;
+    let locs_result = locs_result.unwrap();
+    for loc in locs_result.data {
+        println!(
+            "{}! Name: {}, Continent: {}",
+            locs_result.result, loc.name, loc.continent
+        );
+    }
+
     Ok(())
 }
 

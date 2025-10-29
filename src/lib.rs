@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use config::API_KEY;
+use endpoints::locations::{Location, LocationsData};
 use endpoints::servers::{Server, ServerData, ServersData};
 use reqwest::ClientBuilder;
 use reqwest_hickory_resolver::HickoryResolver;
@@ -47,10 +48,19 @@ impl NaClient {
 
     pub async fn get_servers(&self) -> Result<ServersData, reqwest::Error> {
         self.http_client
-            .get(format!("{}servers/?key={}", self.address, self.api_key))
+            .get(format!("{}servers?key={}", self.address, self.api_key))
             .send()
             .await?
             .json::<endpoints::ServersData>()
+            .await
+    }
+
+    pub async fn get_locations(&self) -> Result<LocationsData, reqwest::Error> {
+        self.http_client
+            .get(format!("{}locations?key={}", self.address, self.api_key))
+            .send()
+            .await?
+            .json::<endpoints::LocationsData>()
             .await
     }
 }
