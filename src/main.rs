@@ -50,7 +50,7 @@ async fn main() -> reqwest::Result<()> {
     }
 
     // playing with new constructor for client
-    let test_client = NaClient::new(API_KEY.to_owned(), API_ADDRESS.to_owned()).await;
+    let na_client = NaClient::new(API_KEY.to_owned(), API_ADDRESS.to_owned()).await;
 
     // TODO: Create more types and forgoe creating the new functions
     // since we are only worrying about readonly mode...
@@ -58,14 +58,14 @@ async fn main() -> reqwest::Result<()> {
     // At that point we won't take any options except maybe like a starting view
     // for instance -l for starting with listing locations or servers or whatever...
     if mbpkgid > 0 {
-        let api_result = test_client.get_server(mbpkgid).await;
+        let api_result = na_client.get_server(mbpkgid).await;
         let api_result = api_result.unwrap();
         println!(
             "fqdn: {}, mbpkgid: {}",
             api_result.data.fqdn, api_result.data.mbpkgid
         );
     } else {
-        let api_result = test_client.get_servers().await;
+        let api_result = na_client.get_servers().await;
         let api_result = api_result.unwrap();
         for srvr in api_result.data {
             println!("fqdn: {}, mbpkgid: {}", srvr.fqdn, srvr.mbpkgid);
