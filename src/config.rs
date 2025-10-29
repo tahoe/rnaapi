@@ -3,6 +3,7 @@ use lazy_static::lazy_static;
 use std::env as std_env;
 
 lazy_static! {
+    #[derive(Debug)]
     pub static ref API_ADDRESS: String = set_address();
 }
 
@@ -17,6 +18,7 @@ fn set_address() -> String {
 }
 
 lazy_static! {
+    #[derive(Debug)]
     pub static ref API_KEY: String = set_key();
 }
 

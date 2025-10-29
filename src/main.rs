@@ -19,9 +19,9 @@
 //! ```
 //!
 use clap::Parser;
-use rnaapi::config;
-use rnaapi::domain::{Server, ServerData, ServersData};
-use rnaapi::Application;
+use rnaapi::config::{API_ADDRESS, API_KEY};
+use rnaapi::endpoints::{Server, ServerData, ServersData};
+use rnaapi::NaClient;
 use serde::Serialize;
 use serde_json::{Result, Value};
 use std::env;
@@ -40,35 +40,36 @@ async fn main() -> reqwest::Result<()> {
     //! So it's going to be fun figuring out how to represent them in Rust Structs
 
     // Defaults
-    let mut mbpkgid: i32 = 0;
-    let mut servers: &str = "servers";
+    let mut mbpkgid: u32 = 0;
 
     // parse our args into args
     let args = SimpleArgs::parse();
 
     if args.mbpkgid >= 1 {
         mbpkgid = args.mbpkgid;
-        servers = "server";
     }
 
     // playing with new constructor for client
-    let test_client = Application::new(config::API_ADDRESS.to_owned()).await;
+    let test_client = NaClient::new(API_KEY.to_owned(), API_ADDRESS.to_owned()).await;
 
-    // let test_client = Arc::new(Client::builder().dns_resolver(resolver).build());
-    let api_result = test_client
-        .http_client
-        .get(format!(
-            "{}/{servers}/?key={}&mbpkgid={mbpkgid}",
-            test_client.address,
-            config::API_KEY.to_owned()
-        ))
-        .send()
-        .await?
-        .json::<ServersData>()
-        .await?;
-    //let res_json: Server = serde_json::from_str(&res_str).expect("blah");
-    for srvr in api_result.data.iter() {
-        println!("{}", srvr.fqdn);
+    // TODO: Create more types and forgoe creating the new functions
+    // since we are only worrying about readonly mode...
+    // TODO: Star re-working this main.rs as an example TUI app using ratatui
+    // At that point we won't take any options except maybe like a starting view
+    // for instance -l for starting with listing locations or servers or whatever...
+    if mbpkgid > 0 {
+        let api_result = test_client.get_server(mbpkgid).await;
+        let api_result = api_result.unwrap();
+        println!(
+            "fqdn: {}, mbpkgid: {}",
+            api_result.data.fqdn, api_result.data.mbpkgid
+        );
+    } else {
+        let api_result = test_client.get_servers().await;
+        let api_result = api_result.unwrap();
+        for srvr in api_result.data {
+            println!("fqdn: {}, mbpkgid: {}", srvr.fqdn, srvr.mbpkgid);
+        }
     }
     Ok(())
 }
@@ -81,5 +82,5 @@ async fn main() -> reqwest::Result<()> {
 struct SimpleArgs {
     // -m argument for picking an mbpkgid
     #[arg(short, long, default_value_t = 0)]
-    mbpkgid: i32,
+    mbpkgid: u32,
 }
