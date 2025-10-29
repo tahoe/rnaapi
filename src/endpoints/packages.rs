@@ -4,12 +4,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PackageData {
     pub result: String,
+    pub code: u32,
     pub data: Package,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PackagesData {
     pub result: String,
+    pub code: u32,
     pub data: Vec<Package>,
 }
 

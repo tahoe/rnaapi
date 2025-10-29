@@ -1,11 +1,11 @@
 pub mod bgp;
+pub mod images;
 pub mod locations;
-pub mod oses;
 pub mod packages;
 pub mod servers;
 
 pub use bgp::*;
+pub use images::*;
 pub use locations::*;
-pub use oses::*;
 pub use packages::*;
 pub use servers::*;

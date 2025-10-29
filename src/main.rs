@@ -86,6 +86,25 @@ async fn main() -> reqwest::Result<()> {
         );
     }
 
+    println!();
+    // list packages
+    let pkgs_result = na_client.get_packages().await;
+    let pkgs_result = pkgs_result.unwrap();
+    for pkg in pkgs_result.data {
+        println!(
+            "{}! Name: {}, Continent: {}",
+            pkgs_result.result, pkg.name, pkg.city
+        );
+    }
+
+    println!();
+    // list images
+    let imgs_result = na_client.get_images().await;
+    let imgs_result = imgs_result.unwrap();
+    for img in imgs_result.data {
+        println!("{}! Name: {}", imgs_result.result, img.os.unwrap());
+    }
+
     Ok(())
 }
 

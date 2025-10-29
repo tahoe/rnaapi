@@ -4,7 +4,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use config::API_KEY;
+use endpoints::images::{Image, ImageData, ImagesData};
 use endpoints::locations::{Location, LocationsData};
+use endpoints::packages::{Package, PackageData, PackagesData};
 use endpoints::servers::{Server, ServerData, ServersData};
 use reqwest::ClientBuilder;
 use reqwest_hickory_resolver::HickoryResolver;
@@ -61,6 +63,24 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::LocationsData>()
+            .await
+    }
+
+    pub async fn get_packages(&self) -> Result<PackagesData, reqwest::Error> {
+        self.http_client
+            .get(format!("{}packages?key={}", self.address, self.api_key))
+            .send()
+            .await?
+            .json::<endpoints::PackagesData>()
+            .await
+    }
+
+    pub async fn get_images(&self) -> Result<ImagesData, reqwest::Error> {
+        self.http_client
+            .get(format!("{}images?key={}", self.address, self.api_key))
+            .send()
+            .await?
+            .json::<endpoints::ImagesData>()
             .await
     }
 }
