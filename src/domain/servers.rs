@@ -1,10 +1,22 @@
-#![allow(clippy::too_many_arguments)]
+#![allow(clippy::too_many_arguments, non_snake_case)]
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ServerData {
+    pub data: Server,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ServersData {
+    pub data: Vec<Server>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct Server {
     pub city: String,
-    pub domu_package: u32,
     pub fqdn: String,
+    pub domU_package: u32,
     pub mbpkgid: u32,
     pub os_id: u32,
     pub location_id: u32,
@@ -15,8 +27,7 @@ pub struct Server {
     pub state: String,
     pub status: String,
     pub uptime: String,
-    pub vcpus: u32,
-    pub installed: bool,
+    pub installed: u32,
     pub nic1_mac: String,
     pub nic2_mac: String,
 }
@@ -24,7 +35,7 @@ pub struct Server {
 impl Server {
     pub fn new(
         city: String,
-        domu_package: u32,
+        domU_package: u32,
         fqdn: String,
         mbpkgid: u32,
         os_id: u32,
@@ -36,14 +47,13 @@ impl Server {
         state: String,
         status: String,
         uptime: String,
-        vcpus: u32,
-        installed: bool,
+        installed: u32,
         nic1_mac: String,
         nic2_mac: String,
     ) -> Self {
         Self {
             city,
-            domu_package,
+            domU_package,
             fqdn,
             mbpkgid,
             os_id,
@@ -55,7 +65,6 @@ impl Server {
             state,
             status,
             uptime,
-            vcpus,
             installed,
             nic1_mac,
             nic2_mac,

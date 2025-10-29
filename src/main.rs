@@ -20,6 +20,7 @@
 //!
 use clap::Parser;
 use rnaapi::config;
+use rnaapi::domain::{Server, ServerData, ServersData};
 use rnaapi::Application;
 use serde::Serialize;
 use serde_json::{Result, Value};
@@ -62,10 +63,11 @@ async fn main() -> reqwest::Result<()> {
             config::API_KEY.to_owned()
         ))
         .send()
+        .await?
+        .json::<ServersData>()
         .await?;
-    let res_str = api_result.text().await?;
-    let res_json: Value = serde_json::from_str(&res_str).expect("blah");
-    println!("{res_json:#}");
+    //let res_json: Server = serde_json::from_str(&res_str).expect("blah");
+    println!("{:?}", api_result.data[0].fqdn);
     Ok(())
 }
 
