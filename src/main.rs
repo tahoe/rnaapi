@@ -67,7 +67,9 @@ async fn main() -> reqwest::Result<()> {
         .json::<ServersData>()
         .await?;
     //let res_json: Server = serde_json::from_str(&res_str).expect("blah");
-    println!("{:?}", api_result.data[0].fqdn);
+    for srvr in api_result.data.iter() {
+        println!("{}", srvr.fqdn);
+    }
     Ok(())
 }
 
