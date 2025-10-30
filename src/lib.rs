@@ -44,8 +44,9 @@ impl NaClient {
     //
 
     // Get Server
-    pub async fn get_server(&self, mbpkgid: u32) -> Result<ServerData, reqwest::Error> {
-        self.http_client
+    pub async fn get_server(&self, mbpkgid: u32) -> Result<Server, reqwest::Error> {
+        let server_data = self
+            .http_client
             .get(format!(
                 "{}server/?key={}&mbpkgid={mbpkgid}",
                 self.address, self.api_key
@@ -53,22 +54,26 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::ServerData>()
-            .await
+            .await;
+        Ok(server_data.unwrap().data)
     }
 
     // Get Servers
-    pub async fn get_servers(&self) -> Result<ServersData, reqwest::Error> {
-        self.http_client
+    pub async fn get_servers(&self) -> Result<Vec<Server>, reqwest::Error> {
+        let servers_data = self
+            .http_client
             .get(format!("{}servers?key={}", self.address, self.api_key))
             .send()
             .await?
             .json::<endpoints::ServersData>()
-            .await
+            .await;
+        Ok(servers_data.unwrap().data)
     }
 
     // Get Job
-    pub async fn get_job(&self, mbpkgid: u32, jobid: u32) -> Result<SrvJobData, reqwest::Error> {
-        self.http_client
+    pub async fn get_job(&self, mbpkgid: u32, jobid: u32) -> Result<SrvJob, reqwest::Error> {
+        let server_job_data = self
+            .http_client
             .get(format!(
                 "{}server/{mbpkgid}/jobs/{jobid}?key={}",
                 self.address, self.api_key
@@ -76,12 +81,14 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::SrvJobData>()
-            .await
+            .await;
+        Ok(server_job_data.unwrap().data)
     }
 
     // Get Jobs
-    pub async fn get_jobs(&self, mbpkgid: u32) -> Result<SrvJobsData, reqwest::Error> {
-        self.http_client
+    pub async fn get_jobs(&self, mbpkgid: u32) -> Result<Vec<SrvJob>, reqwest::Error> {
+        let server_jobs_data = self
+            .http_client
             .get(format!(
                 "{}server/{mbpkgid}/jobs?key={}",
                 self.address, self.api_key
@@ -89,12 +96,14 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::SrvJobsData>()
-            .await
+            .await;
+        Ok(server_jobs_data.unwrap().data)
     }
 
     // Get IPv4 Data
-    pub async fn get_ipv4(&self, mbpkgid: u32) -> Result<IPv4Data, reqwest::Error> {
-        self.http_client
+    pub async fn get_ipv4(&self, mbpkgid: u32) -> Result<Vec<IPv4>, reqwest::Error> {
+        let ipv4_data = self
+            .http_client
             .get(format!(
                 "{}ipv4?mbpkgid={mbpkgid}&key={}",
                 self.address, self.api_key
@@ -102,12 +111,14 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::IPv4Data>()
-            .await
+            .await;
+        Ok(ipv4_data.unwrap().data)
     }
 
     // Get IPv6 Data
-    pub async fn get_ipv6(&self, mbpkgid: u32) -> Result<IPv6Data, reqwest::Error> {
-        self.http_client
+    pub async fn get_ipv6(&self, mbpkgid: u32) -> Result<Vec<IPv6>, reqwest::Error> {
+        let ipv6_data = self
+            .http_client
             .get(format!(
                 "{}ipv6?mbpkgid={mbpkgid}&key={}",
                 self.address, self.api_key
@@ -115,12 +126,14 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::IPv6Data>()
-            .await
+            .await;
+        Ok(ipv6_data.unwrap().data)
     }
 
     // Get Server Status
-    pub async fn get_status(&self, mbpkgid: u32) -> Result<SrvStatusData, reqwest::Error> {
-        self.http_client
+    pub async fn get_status(&self, mbpkgid: u32) -> Result<SrvStatus, reqwest::Error> {
+        let srv_status_data = self
+            .http_client
             .get(format!(
                 "{}status/{mbpkgid}?key={}",
                 self.address, self.api_key
@@ -128,42 +141,49 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::SrvStatusData>()
-            .await
+            .await;
+        Ok(srv_status_data.unwrap().data)
     }
 
     //
     // Locations
     //
-    pub async fn get_locations(&self) -> Result<LocationsData, reqwest::Error> {
-        self.http_client
+    pub async fn get_locations(&self) -> Result<Vec<Location>, reqwest::Error> {
+        let locations_data = self
+            .http_client
             .get(format!("{}locations?key={}", self.address, self.api_key))
             .send()
             .await?
             .json::<endpoints::LocationsData>()
-            .await
+            .await;
+        Ok(locations_data.unwrap().data)
     }
 
     //
     // Packages
     //
-    pub async fn get_packages(&self) -> Result<PackagesData, reqwest::Error> {
-        self.http_client
+    pub async fn get_packages(&self) -> Result<Vec<Package>, reqwest::Error> {
+        let pkgs_data = self
+            .http_client
             .get(format!("{}packages?key={}", self.address, self.api_key))
             .send()
             .await?
             .json::<endpoints::PackagesData>()
-            .await
+            .await;
+        Ok(pkgs_data.unwrap().data)
     }
 
     //
     // Images
     //
-    pub async fn get_images(&self) -> Result<ImagesData, reqwest::Error> {
-        self.http_client
+    pub async fn get_images(&self) -> Result<Vec<Image>, reqwest::Error> {
+        let imgs_data = self
+            .http_client
             .get(format!("{}images?key={}", self.address, self.api_key))
             .send()
             .await?
             .json::<endpoints::ImagesData>()
-            .await
+            .await;
+        Ok(imgs_data.unwrap().data)
     }
 }
