@@ -101,7 +101,7 @@ async fn main() -> reqwest::Result<()> {
 
         println!();
         // print server status, very unverbose
-        let status_result = na_client.get_server(mbpkgid).await;
+        let status_result = na_client.get_status(mbpkgid).await;
         let status_result = status_result.unwrap();
         println!("Status: {}", status_result.data.status);
     } else {

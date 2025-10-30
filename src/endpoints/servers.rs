@@ -122,8 +122,7 @@ pub struct SrvStatusData {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct SrvStatus {
-    pub id: u32,
-    pub status: u32,
+    pub status: String,
 }
 
 //
