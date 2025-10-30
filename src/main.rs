@@ -20,7 +20,7 @@
 //!
 use clap::Parser;
 use rnaapi::config::{API_ADDRESS, API_KEY};
-use rnaapi::endpoints::{Server, ServerData, ServersData};
+use rnaapi::endpoints::{Server, ServerData, ServersData, SrvJob, SrvJobsData};
 use rnaapi::NaClient;
 use serde::Serialize;
 use serde_json::{Result, Value};
@@ -58,12 +58,52 @@ async fn main() -> reqwest::Result<()> {
     // At that point we won't take any options except maybe like a starting view
     // for instance -l for starting with listing locations or servers or whatever...
     if mbpkgid > 0 {
+        // print basic server info
         let api_result = na_client.get_server(mbpkgid).await;
         let api_result = api_result.unwrap();
         println!(
             "fqdn: {}, mbpkgid: {}",
             api_result.data.fqdn, api_result.data.mbpkgid
         );
+
+        println!();
+        // print jobs
+        let jobs_result = na_client.get_jobs(mbpkgid).await;
+        let jobs_result = jobs_result.unwrap();
+        for job in jobs_result.data {
+            println!(
+                "{}! Inserted: {}, Status: {}, command: {}",
+                jobs_result.result, job.ts_insert, job.status, job.command
+            );
+        }
+
+        println!();
+        // print IPv4 Addresses
+        let ipv4_result = na_client.get_ipv4(mbpkgid).await;
+        let ipv4_result = ipv4_result.unwrap();
+        for ipv4 in ipv4_result.data {
+            println!(
+                "{}! Reverse: {}, IP: {}, Gateway: {}",
+                ipv4_result.result, ipv4.reverse, ipv4.ip, ipv4.gateway
+            );
+        }
+
+        println!();
+        // print IPv6 Addresses
+        let ipv6_result = na_client.get_ipv6(mbpkgid).await;
+        let ipv6_result = ipv6_result.unwrap();
+        for ipv6 in ipv6_result.data {
+            println!(
+                "{}! Reverse: {}, IP: {}, Gateway: {}",
+                ipv6_result.result, ipv6.reverse, ipv6.ip, ipv6.gateway
+            );
+        }
+
+        println!();
+        // print server status, very unverbose
+        let status_result = na_client.get_server(mbpkgid).await;
+        let status_result = status_result.unwrap();
+        println!("Status: {}", status_result.data.status);
     } else {
         let srvrs_result = na_client.get_servers().await;
         let srvrs_result = srvrs_result.unwrap();
@@ -73,36 +113,42 @@ async fn main() -> reqwest::Result<()> {
                 srvrs_result.result, srvr.fqdn, srvr.mbpkgid
             );
         }
-    }
 
-    println!();
-    // list locations
-    let locs_result = na_client.get_locations().await;
-    let locs_result = locs_result.unwrap();
-    for loc in locs_result.data {
-        println!(
-            "{}! Name: {}, Continent: {}",
-            locs_result.result, loc.name, loc.continent
-        );
-    }
+        println!();
+        // list locations
+        let locs_result = na_client.get_locations().await;
+        let locs_result = locs_result.unwrap();
+        for loc in locs_result.data {
+            println!(
+                "{}! Name: {}, Continent: {}",
+                locs_result.result, loc.name, loc.continent
+            );
+        }
 
-    println!();
-    // list packages
-    let pkgs_result = na_client.get_packages().await;
-    let pkgs_result = pkgs_result.unwrap();
-    for pkg in pkgs_result.data {
-        println!(
-            "{}! Name: {}, Continent: {}",
-            pkgs_result.result, pkg.name, pkg.city
-        );
-    }
+        println!();
+        // list packages
+        let pkgs_result = na_client.get_packages().await;
+        let pkgs_result = pkgs_result.unwrap();
+        for pkg in pkgs_result.data {
+            println!(
+                "{}! Name: {}, Continent: {}",
+                pkgs_result.result, pkg.name, pkg.city
+            );
+        }
 
-    println!();
-    // list images
-    let imgs_result = na_client.get_images().await;
-    let imgs_result = imgs_result.unwrap();
-    for img in imgs_result.data {
-        println!("{}! Name: {}", imgs_result.result, img.os.unwrap());
+        println!();
+        // list images
+        let imgs_result = na_client.get_images().await;
+        let imgs_result = imgs_result.unwrap();
+        for img in imgs_result.data {
+            println!(
+                "{}! ID: {}, Size: {}, Name: {}",
+                img.id,
+                imgs_result.result,
+                img.size.unwrap_or("null".to_owned()),
+                img.os.unwrap_or("null".to_owned())
+            );
+        }
     }
 
     Ok(())

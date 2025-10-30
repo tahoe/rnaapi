@@ -1,18 +1,56 @@
 #![allow(clippy::too_many_arguments, non_snake_case)]
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
+// Define a module to hold the custom serialization/deserialization logic.
+// This is kind of BS to have to do...
+mod custom_datetime_format {
+    use chrono::{NaiveDateTime, ParseResult};
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    const FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+
+    // The signature for a `serialize_with` function must take the value being
+    // serialized and a serializer.
+    pub fn serialize<S>(date: &NaiveDateTime, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s = format!("{}", date.format(FORMAT));
+        serializer.serialize_str(&s)
+    }
+
+    // The signature for a `deserialize_with` function must take a deserializer.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<NaiveDateTime, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)
+    }
+}
+
+//
+// Server structs
+//
+
+// ServerData
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ServerData {
+    pub code: u32,
     pub result: String,
     pub data: Server,
 }
 
+// ServersData (plural)
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ServersData {
+    pub code: u32,
     pub result: String,
     pub data: Vec<Server>,
 }
 
+// Server struct
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct Server {
@@ -33,6 +71,117 @@ pub struct Server {
     pub nic1_mac: String,
     pub nic2_mac: String,
 }
+
+//
+// Job structs
+// URL: https://vapi2.netactuate.com/api/cloud/server/{mbpkgid}/jobs/{jobid}
+// URL: https://vapi2.netactuate.com/api/cloud/server/{mbpkgid}/jobs
+//
+
+// JobData struct
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SrvJobData {
+    pub code: u32,
+    pub result: String,
+    pub data: SrvJob,
+}
+
+// SrvJobsData struct (plural)
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SrvJobsData {
+    pub code: u32,
+    pub result: String,
+    pub data: Vec<SrvJob>,
+}
+
+// SrvJob struct
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SrvJob {
+    pub id: u32,
+    #[serde(with = "custom_datetime_format")]
+    pub ts_insert: NaiveDateTime,
+    pub command: String,
+    pub status: u32,
+}
+
+//
+// Status structs
+// URL: https://vapi2.netactuate.com/api/cloud/status/{mbpkgid}
+//
+
+// SrvStatusData struct
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SrvStatusData {
+    pub code: u32,
+    pub result: String,
+    pub data: SrvStatus,
+}
+
+// SrvStatus struct
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SrvStatus {
+    pub id: u32,
+    pub status: u32,
+}
+
+//
+// IPv4IP structs
+// URL: https://vapi2.netactuate.com/api/cloud/ipv4?mbpkgid=<mbpkgid>&key=<api_key>
+//
+
+// IPv4Data struct
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct IPv4Data {
+    pub code: u32,
+    pub result: String,
+    pub data: Vec<IPv4>,
+}
+
+// Status struct
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct IPv4 {
+    pub id: u32,
+    pub primary: u32,
+    pub reverse: String,
+    pub ip: String,
+    pub netmask: String,
+    pub gateway: String,
+    pub broadcast: String,
+}
+
+//
+// IPv6IP structs
+// URL: https://vapi2.netactuate.com/api/cloud/ipv6?mbpkgid=<mbpkgid>&key=<api_key>
+//
+
+// IPv6Data struct
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct IPv6Data {
+    pub code: u32,
+    pub result: String,
+    pub data: Vec<IPv6>,
+}
+
+// Status struct
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct IPv6 {
+    pub id: u32,
+    pub primary: u32,
+    pub reverse: String,
+    pub ip: String,
+    pub netmask: String,
+    pub gateway: String,
+    pub broadcast: String,
+}
+
+//
+// SrvSummary structs
+// URL: https://vapi2.netactuate.com/api/cloud/serversummary/{mbpkgid}
+// TODO: start here and keep going
 
 // impl Server {
 //     pub fn new(
