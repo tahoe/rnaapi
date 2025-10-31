@@ -1,4 +1,4 @@
-#![allow(clippy::too_many_arguments, non_snake_case)]
+#![allow(clippy::too_many_arguments)]
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
@@ -56,7 +56,8 @@ pub struct ServersData {
 pub struct Server {
     pub city: String,
     pub fqdn: String,
-    pub domU_package: u32,
+    #[serde(rename = "domU_package")]
+    pub domu_package: u32,
     pub mbpkgid: u32,
     pub os_id: u32,
     pub location_id: u32,

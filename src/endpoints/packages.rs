@@ -1,4 +1,4 @@
-#![allow(clippy::too_many_arguments, non_snake_case)]
+#![allow(clippy::too_many_arguments)]
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -16,14 +16,14 @@ pub struct PackagesData {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub struct Package {
     pub mbpkgid: u32,
     pub package_status: String,
     pub fqdn: String,
     pub name: String,
     pub gid: u32,
-    pub domU_package: u32,
+    #[serde(rename = "domU_package")]
+    pub domu_package: u32,
     pub rescue: u32,
     pub locked: u32,
     pub package: String,

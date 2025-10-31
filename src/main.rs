@@ -59,9 +59,12 @@ async fn main() -> reqwest::Result<()> {
     // for instance -l for starting with listing locations or servers or whatever...
     if mbpkgid > 0 {
         // print basic server info
-        let api_result = na_client.get_server(mbpkgid).await;
-        let api_result = api_result.unwrap();
-        println!("fqdn: {}, mbpkgid: {}", api_result.fqdn, api_result.mbpkgid);
+        let srv_result = na_client.get_server(mbpkgid).await;
+        let srv = srv_result.unwrap();
+        println!(
+            "Package: {}, fqdn: {}, mbpkgid: {}",
+            srv.domu_package, srv.fqdn, srv.mbpkgid
+        );
 
         println!();
         // print jobs

@@ -1,4 +1,4 @@
-// #![allow(clippy::too_many_arguments, non_snake_case)]
+// #![allow(clippy::too_many_arguments)]
 // use serde::{Deserialize, Serialize};
 //
 // #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
