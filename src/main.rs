@@ -1,22 +1,18 @@
-//! Rust library for talking to the NetActuate API
+//! Example rust app using the NetActuate API rust library
 //!
-//! This library provides the methods for establishing a connection
-//! and for retrieving data from as many endpoints as I feel like
-//! writing support for.
-//!
-//! It also will include an example app written in some CLI framework
-//! that will be interactive to some extent, maybe...
+//! This app is mainly for testing and is just an example
 //!
 //! # Usage
 //!
-//! First, let me finish this thang, but you'll need to do a `cargo add rnaapi`
-//! to get started. Right now, all you can do is `cargo install rnaapi`
-//! and use the example application with it's very limited functionality...
+//! There are two forms of output, all server info or a single server's info
 //!
-//! Help output:
-//! ```
-//! No clue yet
-//! ```
+//! ## All servers info
+//! `rnaapi`
+//!
+//! ## A single servers info
+//! `rnaapi -m <mbpkgid>`
+//!
+//! That's it.
 //!
 use clap::Parser;
 use rnaapi::config::{API_ADDRESS, API_KEY};
@@ -32,12 +28,6 @@ use std::sync::Arc;
 async fn main() -> reqwest::Result<()> {
     //! Test/Example "main" function, right now it just takes
     //! one argument, `-m <mbpkgid>` if not given, returns all the servers you own
-    //!
-    //! What makes this whole thing really annoying is that the "list" of servers,
-    //! retrieved at the endpoint /servers, returns a list of servers that are not
-    //! quite the same as the individual servers returned by /server/&mbpkgid=id
-    //!
-    //! So it's going to be fun figuring out how to represent them in Rust Structs
 
     // Defaults
     let mut mbpkgid: u32 = 0;
@@ -52,11 +42,6 @@ async fn main() -> reqwest::Result<()> {
     // playing with new constructor for client
     let na_client = NaClient::new(API_KEY.to_owned(), API_ADDRESS.to_owned()).await;
 
-    // TODO: Create more types and forgoe creating the new functions
-    // since we are only worrying about readonly mode...
-    // TODO: Star re-working this main.rs as an example TUI app using ratatui
-    // At that point we won't take any options except maybe like a starting view
-    // for instance -l for starting with listing locations or servers or whatever...
     if mbpkgid > 0 {
         // print basic server info
         let srv_result = na_client.get_server(mbpkgid).await;
