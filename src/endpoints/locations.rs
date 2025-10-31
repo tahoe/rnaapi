@@ -4,13 +4,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LocationData {
     pub result: String,
-    pub data: Location,
+    #[serde(rename = "data")]
+    pub location: Location,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LocationsData {
     pub result: String,
-    pub data: Vec<Location>,
+    #[serde(rename = "data")]
+    pub locations: Vec<Location>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
