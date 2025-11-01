@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 pub struct ImageData {
     pub result: String,
     pub code: u32,
-    pub data: Image,
+    #[serde(rename = "data")]
+    pub image: Image,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

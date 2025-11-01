@@ -139,7 +139,7 @@ pub struct IPv4Data {
     pub data: Vec<IPv4>,
 }
 
-// Status struct
+// IPv4 struct
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct IPv4 {
@@ -165,7 +165,7 @@ pub struct IPv6Data {
     pub data: Vec<IPv6>,
 }
 
-// Status struct
+// IPv6 struct
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct IPv6 {

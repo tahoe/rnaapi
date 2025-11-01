@@ -1,3 +1,49 @@
+//! Light weight Rust API client library for the NetActuate API
+//! Rust library for talking to the NetActuate API
+//!
+//! This library provides the methods for establishing a connection
+//! and for retrieving data from most endpoints
+//!
+//! It also includes an example app that just prints out some information
+//! The app can be installed with `cargo install rnaapi`
+//!
+//! # Usage
+//!
+//! ## Import the library
+//!
+//! ```rust
+//! cargo add rnaapi
+//! ```
+//!
+//! ## Set up your environment
+//!
+//! ```bash
+//! export API_KEY='<your api key>'
+//! export API_ADDRESS='https://vapi2.netactuate.com/api/cloud'
+//! ```
+//!
+//! ## Import the config that uses the environment
+//!
+//! ```rust
+//! use rnaapi::config::{API_ADDRESS, API_KEY}
+//! use rnaapi::endpoints::{Server, ServerData, ServersData}
+//! use rnaapi::NaClient
+//! // whatever other libraries you want to use like serde_json, serde::Serialize...
+//! ```
+//!
+//! ## Simplest example
+//!
+//! ```rust
+//! // with above imports
+//! let client = NaClient::new(API_KEY.to_owned(), API_ADDRESS.to_owned()).await;
+//! let servers_result = client.get_servers().await;
+//! let servers = servers_result.unwrap().servers;
+//! for server in servers {
+//!     println!("fqdn: {}, mbpkgid: {}", server.fqdn, server.mbpkgid);
+//! }
+//! ```
+//!
+//!
 #![allow(unused)]
 use axum::{
     http::StatusCode,
