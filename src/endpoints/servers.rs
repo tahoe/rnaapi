@@ -39,8 +39,7 @@ mod custom_datetime_format {
 pub struct ServerData {
     pub code: u32,
     pub result: String,
-    #[serde(rename = "data")]
-    pub server: Server,
+    pub data: Server,
 }
 
 // ServersData (plural)
@@ -48,8 +47,7 @@ pub struct ServerData {
 pub struct ServersData {
     pub code: u32,
     pub result: String,
-    #[serde(rename = "data")]
-    pub servers: Vec<Server>,
+    pub data: Vec<Server>,
 }
 
 // Server struct
@@ -86,8 +84,7 @@ pub struct Server {
 pub struct SrvJobData {
     pub code: u32,
     pub result: String,
-    #[serde(rename = "data")]
-    pub job: SrvJob,
+    pub data: SrvJob,
 }
 
 // SrvJobsData struct (plural)
@@ -95,8 +92,7 @@ pub struct SrvJobData {
 pub struct SrvJobsData {
     pub code: u32,
     pub result: String,
-    #[serde(rename = "data")]
-    pub jobs: Vec<SrvJob>,
+    pub data: Vec<SrvJob>,
 }
 
 // SrvJob struct
@@ -120,8 +116,7 @@ pub struct SrvJob {
 pub struct SrvStatusData {
     pub code: u32,
     pub result: String,
-    #[serde(rename = "data")]
-    pub stat: SrvStatus,
+    pub data: SrvStatus,
 }
 
 // SrvStatus struct
@@ -141,8 +136,7 @@ pub struct SrvStatus {
 pub struct IPv4Data {
     pub code: u32,
     pub result: String,
-    #[serde(rename = "data")]
-    pub ipv4s: Vec<IPv4>,
+    pub data: Vec<IPv4>,
 }
 
 // IPv4 struct
@@ -168,8 +162,7 @@ pub struct IPv4 {
 pub struct IPv6Data {
     pub code: u32,
     pub result: String,
-    #[serde(rename = "data")]
-    pub ipv6s: Vec<IPv6>,
+    pub data: Vec<IPv6>,
 }
 
 // IPv6 struct

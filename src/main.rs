@@ -45,7 +45,7 @@ async fn main() -> reqwest::Result<()> {
     if mbpkgid > 0 {
         // print basic server info
         let srv_result = na_client.get_server(mbpkgid).await;
-        let srv = srv_result.unwrap().server;
+        let srv = srv_result.unwrap();
         println!(
             "Package: {}, fqdn: {}, mbpkgid: {}",
             srv.domu_package, srv.fqdn, srv.mbpkgid
@@ -54,7 +54,7 @@ async fn main() -> reqwest::Result<()> {
         println!();
         // print jobs
         let jobs_result = na_client.get_jobs(mbpkgid).await;
-        let jobs = jobs_result.unwrap().jobs;
+        let jobs = jobs_result.unwrap();
         for job in jobs {
             println!(
                 "Inserted: {}, Status: {}, command: {}",
@@ -65,7 +65,7 @@ async fn main() -> reqwest::Result<()> {
         println!();
         // print IPv4 Addresses
         let ipv4_result = na_client.get_ipv4(mbpkgid).await;
-        let ipv4s = ipv4_result.unwrap().ipv4s;
+        let ipv4s = ipv4_result.unwrap();
         for ipv4 in ipv4s {
             println!(
                 "Reverse: {}, IP: {}, Gateway: {}",
@@ -76,7 +76,7 @@ async fn main() -> reqwest::Result<()> {
         println!();
         // print IPv6 Addresses
         let ipv6_result = na_client.get_ipv6(mbpkgid).await;
-        let ipv6s = ipv6_result.unwrap().ipv6s;
+        let ipv6s = ipv6_result.unwrap();
         for ipv6 in ipv6s {
             println!(
                 "Reverse: {}, IP: {}, Gateway: {}",
@@ -87,11 +87,11 @@ async fn main() -> reqwest::Result<()> {
         println!();
         // print server status, very unverbose
         let status_result = na_client.get_status(mbpkgid).await;
-        let stat = status_result.unwrap().stat;
+        let stat = status_result.unwrap();
         println!("Status: {}", stat.status);
     } else {
         let srvrs_result = na_client.get_servers().await;
-        let srvrs = srvrs_result.unwrap().servers;
+        let srvrs = srvrs_result.unwrap();
         for srvr in srvrs {
             println!("fqdn: {}, mbpkgid: {}", srvr.fqdn, srvr.mbpkgid);
         }
@@ -99,7 +99,7 @@ async fn main() -> reqwest::Result<()> {
         println!();
         // list locations
         let locs_result = na_client.get_locations().await;
-        let locs = locs_result.unwrap().locations;
+        let locs = locs_result.unwrap();
         for loc in locs {
             println!("Name: {}, Continent: {}", loc.name, loc.continent);
         }
@@ -107,7 +107,7 @@ async fn main() -> reqwest::Result<()> {
         println!();
         // list packages
         let pkgs_result = na_client.get_packages().await;
-        let pkgs = pkgs_result.unwrap().packages;
+        let pkgs = pkgs_result.unwrap();
         for pkg in pkgs {
             println!("Name: {}, Continent: {}", pkg.name, pkg.city);
         }
@@ -115,7 +115,7 @@ async fn main() -> reqwest::Result<()> {
         println!();
         // list images
         let imgs_result = na_client.get_images().await;
-        let imgs = imgs_result.unwrap().images;
+        let imgs = imgs_result.unwrap();
         for img in imgs {
             println!(
                 "ID: {}, Size: {}, Name: {}",

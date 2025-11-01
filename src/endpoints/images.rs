@@ -12,8 +12,7 @@ pub struct ImageData {
 pub struct ImagesData {
     pub result: String,
     pub code: u32,
-    #[serde(rename = "data")]
-    pub images: Vec<Image>,
+    pub data: Vec<Image>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

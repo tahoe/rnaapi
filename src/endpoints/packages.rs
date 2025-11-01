@@ -5,16 +5,14 @@ use serde::{Deserialize, Serialize};
 pub struct PackageData {
     pub result: String,
     pub code: u32,
-    #[serde(rename = "data")]
-    pub package: Package,
+    pub data: Package,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PackagesData {
     pub result: String,
     pub code: u32,
-    #[serde(rename = "data")]
-    pub packages: Vec<Package>,
+    pub data: Vec<Package>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
