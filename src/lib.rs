@@ -14,6 +14,7 @@ use endpoints::servers::{
 use reqwest::ClientBuilder;
 use reqwest_hickory_resolver::HickoryResolver;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::error::Error;
 use std::sync::Arc;
 
@@ -54,8 +55,8 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::ServerData>()
-            .await;
-        Ok(server_data.unwrap().data)
+            .await?;
+        Ok(server_data.data)
     }
 
     // Get Servers
@@ -66,8 +67,8 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::ServersData>()
-            .await;
-        Ok(servers_data.unwrap().data)
+            .await?;
+        Ok(servers_data.data)
     }
 
     // Get Job
@@ -81,8 +82,8 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::SrvJobData>()
-            .await;
-        Ok(server_job_data.unwrap().data)
+            .await?;
+        Ok(server_job_data.data)
     }
 
     // Get Jobs
@@ -96,8 +97,8 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::SrvJobsData>()
-            .await;
-        Ok(server_jobs_data.unwrap().data)
+            .await?;
+        Ok(server_jobs_data.data)
     }
 
     // Get IPv4 Data
@@ -111,8 +112,8 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::IPv4Data>()
-            .await;
-        Ok(ipv4_data.unwrap().data)
+            .await?;
+        Ok(ipv4_data.data)
     }
 
     // Get IPv6 Data
@@ -126,8 +127,8 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::IPv6Data>()
-            .await;
-        Ok(ipv6_data.unwrap().data)
+            .await?;
+        Ok(ipv6_data.data)
     }
 
     // Get Server Status
@@ -141,8 +142,8 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::SrvStatusData>()
-            .await;
-        Ok(srv_status_data.unwrap().data)
+            .await?;
+        Ok(srv_status_data.data)
     }
 
     //
@@ -155,8 +156,8 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::LocationsData>()
-            .await;
-        Ok(locations_data.unwrap().data)
+            .await?;
+        Ok(locations_data.data)
     }
 
     //
@@ -169,8 +170,8 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::PackagesData>()
-            .await;
-        Ok(pkgs_data.unwrap().data)
+            .await?;
+        Ok(pkgs_data.data)
     }
 
     //
@@ -183,7 +184,7 @@ impl NaClient {
             .send()
             .await?
             .json::<endpoints::ImagesData>()
-            .await;
-        Ok(imgs_data.unwrap().data)
+            .await?;
+        Ok(imgs_data.data)
     }
 }
