@@ -3,10 +3,21 @@
 //! This app is mainly for testing and is just an example
 //!
 //! # Usage
+//! ### Set ENVs
 //!
-//! There are two forms of output, all server info or a single server's info
+//! ```bash
+//! export API_KEY='<your api key>'
+//! export API_ADDRESS='https://vapi2.netactuate.com/api/cloud'
+//! ```
 //!
-//! ## All servers info
+//! ### Install example client
+//! ```rust
+//! cargo install rnaapi
+//! ```
+//!
+//! ### There are two forms of output, all server info or a single server's info
+//!
+//! #### All servers info
 //! `rnaapi`
 //!
 //! ## A single servers info

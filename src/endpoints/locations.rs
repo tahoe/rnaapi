@@ -20,6 +20,7 @@ pub struct Location {
 // Locations
 //
 impl NaClient {
+    /// Get a list of available locations
     pub async fn get_locations(&self) -> Result<Vec<Location>, reqwest::Error> {
         let data = self.get_data("locations").await?;
         let location_list: Vec<Location> = serde_json::from_value(data).unwrap();

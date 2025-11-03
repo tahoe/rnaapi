@@ -61,6 +61,7 @@ pub struct Server {
 
 // Get Server
 impl NaClient {
+    /// Get a single server
     pub async fn get_server(&self, mbpkgid: u32) -> Result<Server, reqwest::Error> {
         let data = self
             .get_data(&format!("server?mbpkgid={mbpkgid}").to_owned())
@@ -68,10 +69,8 @@ impl NaClient {
         let server: Server = serde_json::from_value(data).unwrap();
         Ok(server)
     }
-}
 
-// Get Servers
-impl NaClient {
+    /// Get all my servers
     pub async fn get_servers(&self) -> Result<Vec<Server>, reqwest::Error> {
         let data = self.get_data("servers").await?;
         let servers: Vec<Server> = serde_json::from_value(data).unwrap();
@@ -80,28 +79,10 @@ impl NaClient {
 }
 
 //
-// Job structs
+// Job struct
 // URL: https://vapi2.netactuate.com/api/cloud/server/{mbpkgid}/jobs/{jobid}
 // URL: https://vapi2.netactuate.com/api/cloud/server/{mbpkgid}/jobs
 //
-
-// JobData struct
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SrvJobData {
-    pub code: u32,
-    pub result: String,
-    pub data: SrvJob,
-}
-
-// SrvJobsData struct (plural)
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SrvJobsData {
-    pub code: u32,
-    pub result: String,
-    pub data: Vec<SrvJob>,
-}
-
-// SrvJob struct
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct SrvJob {
@@ -114,50 +95,25 @@ pub struct SrvJob {
 
 // Get Job
 impl NaClient {
+    /// Get a single server Job
     pub async fn get_job(&self, mbpkgid: u32, jobid: u32) -> Result<SrvJob, reqwest::Error> {
-        let server_job_data = self
-            .http_client
-            .get(format!(
-                "{}server/{mbpkgid}/jobs/{jobid}?key={}",
-                self.address, self.api_key
-            ))
-            .send()
-            .await?
-            .json::<SrvJobData>()
-            .await?;
-        Ok(server_job_data.data)
+        let data = self.get_data(&format!("server/{mbpkgid}/{jobid}")).await?;
+        let srvjob: SrvJob = serde_json::from_value(data).unwrap();
+        Ok(srvjob)
     }
 
-    // Get Jobs
+    /// Get all my server Jobs
     pub async fn get_jobs(&self, mbpkgid: u32) -> Result<Vec<SrvJob>, reqwest::Error> {
-        let server_jobs_data = self
-            .http_client
-            .get(format!(
-                "{}server/{mbpkgid}/jobs?key={}",
-                self.address, self.api_key
-            ))
-            .send()
-            .await?
-            .json::<SrvJobsData>()
-            .await?;
-        Ok(server_jobs_data.data)
+        let data = self.get_data(&format!("server/{mbpkgid}/jobs")).await?;
+        let srvjobs: Vec<SrvJob> = serde_json::from_value(data).unwrap();
+        Ok(srvjobs)
     }
 }
 
 //
-// Status structs
+// Status struct
 // URL: https://vapi2.netactuate.com/api/cloud/status/{mbpkgid}
 //
-
-// SrvStatusData struct
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SrvStatusData {
-    pub code: u32,
-    pub result: String,
-    pub data: SrvStatus,
-}
-
-// SrvStatus struct
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct SrvStatus {
@@ -166,35 +122,18 @@ pub struct SrvStatus {
 
 // Get Server Status
 impl NaClient {
+    /// Get server status (up/down/whatever)
     pub async fn get_status(&self, mbpkgid: u32) -> Result<SrvStatus, reqwest::Error> {
-        let srv_status_data = self
-            .http_client
-            .get(format!(
-                "{}status/{mbpkgid}?key={}",
-                self.address, self.api_key
-            ))
-            .send()
-            .await?
-            .json::<SrvStatusData>()
-            .await?;
-        Ok(srv_status_data.data)
+        let data = self.get_data(&format!("status/{mbpkgid}")).await?;
+        let srvstatus: SrvStatus = serde_json::from_value(data).unwrap();
+        Ok(srvstatus)
     }
 }
 
 //
-// IPv4IP structs
+// IPv4IP struct
 // URL: https://vapi2.netactuate.com/api/cloud/ipv4?mbpkgid=<mbpkgid>&key=<api_key>
 //
-
-// IPv4Data struct
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct IPv4Data {
-    pub code: u32,
-    pub result: String,
-    pub data: Vec<IPv4>,
-}
-
-// IPv4 struct
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct IPv4 {
@@ -209,35 +148,18 @@ pub struct IPv4 {
 
 // Get IPv4 Data
 impl NaClient {
+    /// Get server's IPv4 addresses
     pub async fn get_ipv4(&self, mbpkgid: u32) -> Result<Vec<IPv4>, reqwest::Error> {
-        let ipv4_data = self
-            .http_client
-            .get(format!(
-                "{}ipv4?mbpkgid={mbpkgid}&key={}",
-                self.address, self.api_key
-            ))
-            .send()
-            .await?
-            .json::<IPv4Data>()
-            .await?;
-        Ok(ipv4_data.data)
+        let data = self.get_data(&format!("ipv4?mbpkgid={mbpkgid}")).await?;
+        let ipv4: Vec<IPv4> = serde_json::from_value(data).unwrap();
+        Ok(ipv4)
     }
 }
 
 //
-// IPv6IP structs
+// IPv6IP struct
 // URL: https://vapi2.netactuate.com/api/cloud/ipv6?mbpkgid=<mbpkgid>&key=<api_key>
 //
-
-// IPv6Data struct
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct IPv6Data {
-    pub code: u32,
-    pub result: String,
-    pub data: Vec<IPv6>,
-}
-
-// IPv6 struct
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct IPv6 {
@@ -252,18 +174,11 @@ pub struct IPv6 {
 
 // Get IPv6 Data
 impl NaClient {
+    /// Get server's IPv6 addresses
     pub async fn get_ipv6(&self, mbpkgid: u32) -> Result<Vec<IPv6>, reqwest::Error> {
-        let ipv6_data = self
-            .http_client
-            .get(format!(
-                "{}ipv6?mbpkgid={mbpkgid}&key={}",
-                self.address, self.api_key
-            ))
-            .send()
-            .await?
-            .json::<IPv6Data>()
-            .await?;
-        Ok(ipv6_data.data)
+        let data = self.get_data(&format!("ipv6?mbpkgid={mbpkgid}")).await?;
+        let ipv6: Vec<IPv6> = serde_json::from_value(data).unwrap();
+        Ok(ipv6)
     }
 }
 

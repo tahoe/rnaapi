@@ -31,6 +31,7 @@ pub struct Image {
 // Images
 //
 impl NaClient {
+    /// Get a list of available OS images
     pub async fn get_images(&self) -> Result<Vec<Image>, reqwest::Error> {
         let data = self.get_data("images").await?;
         let image_list: Vec<Image> = serde_json::from_value(data).unwrap();

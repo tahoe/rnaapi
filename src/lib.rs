@@ -69,8 +69,8 @@ pub struct NaClient {
 }
 
 impl NaClient {
+    /// build the client to use local resolver, IE Ipv4
     pub async fn new(api_key: String, address: String) -> Self {
-        // build the client to use local resolver, IE Ipv4
         let mut builder = ClientBuilder::new();
         builder = builder.dns_resolver(Arc::new(HickoryResolver::default()));
         let http_client = builder.build().unwrap();
@@ -81,9 +81,7 @@ impl NaClient {
         }
     }
 
-    //
-    // Get Data method on client for use by endpoints to fetch the data attribute
-    //
+    ///Get Data method on client for use by endpoints to fetch the data attribute
     pub async fn get_data(&self, path: &str) -> Result<Value, reqwest::Error> {
         let mut api_key = self.api_key.clone();
         if path.contains("?") {
@@ -101,6 +99,7 @@ impl NaClient {
         // Get the value for "data" key out of the result since this is
         // what we want to build our structs from
         let inner_data: Option<&Value> = result.get("data");
-        Ok(inner_data.unwrap().clone())
+        let inner_value = inner_data.unwrap_or(&Value::Null).clone();
+        Ok(inner_value)
     }
 }

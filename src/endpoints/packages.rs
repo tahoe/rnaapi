@@ -29,6 +29,7 @@ pub struct Package {
 // Packages
 //
 impl NaClient {
+    /// Get a list of available packages
     pub async fn get_packages(&self) -> Result<Vec<Package>, reqwest::Error> {
         let data = self.get_data("packages").await?;
         let pkg_data: Vec<Package> = serde_json::from_value(data).unwrap();
