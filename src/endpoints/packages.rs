@@ -1,19 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct PackageData {
-    pub result: String,
-    pub code: u32,
-    pub data: Package,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct PackagesData {
-    pub result: String,
-    pub code: u32,
-    pub data: Vec<Package>,
-}
+use crate::NaClient;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Package {
@@ -35,6 +23,17 @@ pub struct Package {
     pub uptime: String,
     pub os: String,
     pub is_building: u32,
+}
+
+//
+// Packages
+//
+impl NaClient {
+    pub async fn get_packages(&self) -> Result<Vec<Package>, reqwest::Error> {
+        let data = self.get_data("packages").await?;
+        let pkg_data: Vec<Package> = serde_json::from_value(data).unwrap();
+        Ok(pkg_data)
+    }
 }
 /*
 

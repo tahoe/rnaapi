@@ -1,19 +1,13 @@
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use std::any::type_name;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ImageData {
-    pub result: String,
-    pub code: u32,
-    #[serde(rename = "data")]
-    pub image: Image,
+fn print_type<T>(_: &T) {
+    println!("{}", type_name::<T>());
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ImagesData {
-    pub result: String,
-    pub code: u32,
-    pub data: Vec<Image>,
-}
+use crate::NaClient;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -31,6 +25,17 @@ pub struct Image {
     pub tech: Option<String>,
     pub icon: Option<String>,
     pub private: Option<u32>,
+}
+
+//
+// Images
+//
+impl NaClient {
+    pub async fn get_images(&self) -> Result<Vec<Image>, reqwest::Error> {
+        let data = self.get_data("images").await?;
+        let image_list: Vec<Image> = serde_json::from_value(data).unwrap();
+        Ok(image_list)
+    }
 }
 /*
 // OS is a struct for storing the attributes of an OS

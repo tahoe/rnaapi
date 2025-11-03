@@ -16,7 +16,6 @@
 //!
 use clap::Parser;
 use rnaapi::config::{API_ADDRESS, API_KEY};
-use rnaapi::endpoints::{Server, ServerData, SrvJob, SrvJobsData};
 use rnaapi::NaClient;
 use serde::Serialize;
 use serde_json::{Result, Value};

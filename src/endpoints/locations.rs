@@ -1,17 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct LocationData {
-    pub result: String,
-    pub data: Location,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct LocationsData {
-    pub result: String,
-    pub data: Vec<Location>,
-}
+use crate::NaClient;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -24,6 +14,17 @@ pub struct Location {
     pub latitude: String,
     pub longitude: String,
     pub disabled: u32,
+}
+
+//
+// Locations
+//
+impl NaClient {
+    pub async fn get_locations(&self) -> Result<Vec<Location>, reqwest::Error> {
+        let data = self.get_data("locations").await?;
+        let location_list: Vec<Location> = serde_json::from_value(data).unwrap();
+        Ok(location_list)
+    }
 }
 /*
 
