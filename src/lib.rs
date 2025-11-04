@@ -26,7 +26,6 @@
 //!
 //! ```rust
 //! use rnaapi::config::{API_ADDRESS, API_KEY}
-//! use rnaapi::endpoints::{Server, ServerData, ServersData}
 //! use rnaapi::NaClient
 //! // whatever other libraries you want to use like serde_json, serde::Serialize...
 //! ```
