@@ -41,12 +41,17 @@ async fn main() -> reqwest::Result<()> {
 
     // Defaults
     let mut mbpkgid: u32 = 0;
+    let mut zoneid: u32 = 0;
 
     // parse our args into args
     let args = SimpleArgs::parse();
 
     if args.mbpkgid >= 1 {
         mbpkgid = args.mbpkgid;
+    }
+
+    if args.zoneid >= 1 {
+        zoneid = args.zoneid;
     }
 
     // playing with new constructor for client
@@ -94,6 +99,23 @@ async fn main() -> reqwest::Result<()> {
         // print server status, very unverbose
         let stat = na_client.get_status(mbpkgid).await?;
         println!("Status: {}", stat.status);
+    } else if zoneid > 0 {
+        println!();
+        // // print out the zone name
+        let zone = na_client.get_zone(zoneid).await?;
+        println!("Zone: {}", zone.name);
+
+        // print out the SOA for the zone
+        let soa = zone.soa.unwrap();
+        println!("SOA: {}", soa.primary);
+
+        // print out the first record
+        let recs = zone.records.unwrap();
+        println!("1st Record: {}", recs[0].name);
+
+        // print out the first NS record
+        let nsrecs = zone.ns.unwrap();
+        println!("1st NS: {}", nsrecs[0])
     } else {
         let srvrs = na_client.get_servers().await?;
         for srvr in srvrs {
@@ -125,6 +147,16 @@ async fn main() -> reqwest::Result<()> {
                 img.os.unwrap_or("null".to_owned())
             );
         }
+
+        println!();
+        // list dns zones
+        let zones = na_client.get_zones().await?;
+        for zone in zones {
+            println!(
+                "ID: {}, Size: {}, Name: {}",
+                zone.id, zone.name, zone.zone_type
+            );
+        }
     }
 
     Ok(())
@@ -139,4 +171,8 @@ struct SimpleArgs {
     // -m argument for picking an mbpkgid
     #[arg(short, long, default_value_t = 0)]
     mbpkgid: u32,
+
+    // -z argument for picking a dns zone
+    #[arg(short, long, conflicts_with = "mbpkgid", default_value_t = 0)]
+    zoneid: u32,
 }

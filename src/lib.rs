@@ -86,6 +86,7 @@ impl NaClient {
         } else {
             api_key = "?key=".to_owned() + &self.api_key;
         }
+        // println!("{}{}{}", self.address, path, api_key);
         let result = self
             .http_client
             .get(format!("{}{}{}", self.address, path, api_key))
