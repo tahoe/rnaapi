@@ -53,10 +53,11 @@ use config::API_KEY;
 //     SrvJobsData, SrvStatus, SrvStatusData,
 // };
 use reqwest::ClientBuilder;
+use reqwest::Error as ReqError;
 use reqwest_hickory_resolver::HickoryResolver;
 use serde_json::Value;
-use std::error::Error;
 use std::sync::Arc;
+use std::{error::Error, process};
 
 pub mod config;
 pub mod endpoints;
@@ -80,16 +81,6 @@ impl NaClient {
         }
     }
 
-    /// Call the make_request and parse the results
-    /// We want to get the "data" attribute from the response for the calling
-    /// endpoint
-    pub async fn get_data(&self, path: &str) -> Result<Value, reqwest::Error> {
-        let result = self.make_request(path).await?;
-        let inner_data: Option<&Value> = result.get("data");
-        let inner_value = inner_data.unwrap_or(&Value::Null).clone();
-        Ok(inner_value)
-    }
-
     /// Make a request for the client
     async fn make_request(&self, path: &str) -> Result<Value, reqwest::Error> {
         let mut api_key = self.api_key.clone();
@@ -106,5 +97,28 @@ impl NaClient {
             .json::<Value>()
             .await?;
         Ok(result)
+    }
+
+    /// Call the make_request and parse the results
+    /// We want to get the "data" attribute from the response for the calling
+    /// endpoint. Exit with error message if "data" is not present
+    /// This is shitty but it is safe enough so far as I can tell at this point
+    pub async fn get_data(&self, path: &str) -> Result<Value, ReqError> {
+        // Get the response from make_request method
+        let result = self.make_request(path).await?;
+
+        // Try to pull the "data" key from the response
+        let inner_data: Option<&Value> = match result.get("data") {
+            Some(b) => result.get("data"),
+            None => {
+                println!("Failed to get data for some reason");
+                println!("Result was: {result}");
+                process::exit(1)
+            }
+        };
+
+        // Try to unwrap the inner data, should be Value or None
+        let inner_value = inner_data.unwrap_or(&Value::Null).clone();
+        Ok(inner_value)
     }
 }
