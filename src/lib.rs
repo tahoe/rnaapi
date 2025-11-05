@@ -15,11 +15,12 @@
 //! cargo add rnaapi
 //! ```
 //!
-//! ## Set up your environment
+//! ## Set up your environment, note that the API_ADDRESS will be appended
+//! to based on the endpoints
 //!
 //! ```bash
 //! export API_KEY='<your api key>'
-//! export API_ADDRESS='https://vapi2.netactuate.com/api/cloud'
+//! export API_ADDRESS='https://vapi2.netactuate.com/api/'
 //! ```
 //!
 //! ## Import the config that uses the environment
@@ -48,10 +49,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use config::API_KEY;
-// use endpoints::servers::{
-//     IPv4, IPv4Data, IPv6, IPv6Data, Server, ServerData, ServersData, SrvJob, SrvJobData,
-//     SrvJobsData, SrvStatus, SrvStatusData,
-// };
 use reqwest::ClientBuilder;
 use reqwest::Error as ReqError;
 use reqwest_hickory_resolver::HickoryResolver;
