@@ -120,3 +120,59 @@ impl NaClient {
         Ok(inner_value)
     }
 }
+
+// // Define a module to hold the custom serialization/deserialization logic.
+// // This is kind of BS to have to do...
+// mod custom_datetime_format_seconds {
+//     use chrono::{NaiveDateTime, ParseResult};
+//     use serde::{self, Deserialize, Deserializer, Serializer};
+//
+//     const FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+//
+//     // The signature for a `serialize_with` function must take the value being
+//     // serialized and a serializer.
+//     pub fn serialize<S>(date: &NaiveDateTime, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         let s = format!("{}", date.format(FORMAT));
+//         serializer.serialize_str(&s)
+//     }
+//
+//     // The signature for a `deserialize_with` function must take a deserializer.
+//     pub fn deserialize<'de, D>(deserializer: D) -> Result<NaiveDateTime, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         let s = String::deserialize(deserializer)?;
+//         NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)
+//     }
+// }
+//
+// // Define a module to hold the custom serialization/deserialization logic.
+// // This is kind of BS to have to do...
+// mod custom_datetime_format_microseconds {
+//     use chrono::{NaiveDateTime, ParseResult};
+//     use serde::{self, Deserialize, Deserializer, Serializer};
+//
+//     const FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
+//
+//     // The signature for a `serialize_with` function must take the value being
+//     // serialized and a serializer.
+//     pub fn serialize<S>(date: &NaiveDateTime, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         let s = format!("{}", date.format(FORMAT));
+//         serializer.serialize_str(&s)
+//     }
+//
+//     // The signature for a `deserialize_with` function must take a deserializer.
+//     pub fn deserialize<'de, D>(deserializer: D) -> Result<NaiveDateTime, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         let s = String::deserialize(deserializer)?;
+//         NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)
+//     }
+// }

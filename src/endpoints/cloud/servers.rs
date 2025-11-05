@@ -1,38 +1,11 @@
 #![allow(clippy::too_many_arguments)]
+// use crate::custom_datetime_format_seconds;
 use std::fmt::format;
 
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 use crate::NaClient;
-
-// Define a module to hold the custom serialization/deserialization logic.
-// This is kind of BS to have to do...
-mod custom_datetime_format {
-    use chrono::{NaiveDateTime, ParseResult};
-    use serde::{self, Deserialize, Deserializer, Serializer};
-
-    const FORMAT: &str = "%Y-%m-%d %H:%M:%S";
-
-    // The signature for a `serialize_with` function must take the value being
-    // serialized and a serializer.
-    pub fn serialize<S>(date: &NaiveDateTime, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let s = format!("{}", date.format(FORMAT));
-        serializer.serialize_str(&s)
-    }
-
-    // The signature for a `deserialize_with` function must take a deserializer.
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<NaiveDateTime, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)
-    }
-}
 
 //
 // Server struct
@@ -87,8 +60,9 @@ impl NaClient {
 #[serde(rename_all = "snake_case")]
 pub struct SrvJob {
     pub id: u32,
-    #[serde(with = "custom_datetime_format")]
-    pub ts_insert: NaiveDateTime,
+    // #[serde(with = "custom_datetime_format_seconds")]
+    // pub ts_insert: NaiveDateTime,
+    pub ts_insert: String,
     pub command: String,
     pub status: u32,
 }

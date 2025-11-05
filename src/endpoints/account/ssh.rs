@@ -1,0 +1,37 @@
+#![allow(clippy::too_many_arguments)]
+// use crate::custom_datetime_format_microseconds;
+use std::fmt::format;
+
+use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
+
+use crate::NaClient;
+
+///
+/// Account Details #[derive(Debug)]
+///
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SSHKeys {
+    pub id: u32,
+    pub mb_id: u32,
+    pub ssh_key: String,
+    pub fingerprint: String,
+    pub name: String,
+    // #[serde(with = "custom_datetime_format_microseconds")]
+    // pub created_at: NaiveDateTime,
+    // #[serde(with = "custom_datetime_format_microseconds")]
+    // pub updated_at: NaiveDateTime,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+// Get Details
+impl NaClient {
+    /// Get a single server
+    pub async fn get_ssh_keys(&self) -> Result<Vec<SSHKeys>, reqwest::Error> {
+        let data = self.get_data("account/ssh_keys").await?;
+        let ssh_keys: Vec<SSHKeys> = serde_json::from_value(data).unwrap();
+        Ok(ssh_keys)
+    }
+}

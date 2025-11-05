@@ -99,6 +99,31 @@ async fn main() -> reqwest::Result<()> {
         // print server status, very unverbose
         let stat = na_client.get_status(mbpkgid).await?;
         println!("Status: {}", stat.status);
+
+        println!();
+        // print some ssh keys
+        let ssh_keys = na_client.get_ssh_keys().await?;
+        for sshkey in ssh_keys {
+            println!("Key: {}, Created At: {}", sshkey.name, sshkey.created_at);
+        }
+
+        println!();
+        // print some account deets
+        let deets = na_client.get_acct_details().await?;
+        println!(
+            "FullName: {}, Address: {}, {} {} {}",
+            deets.fullname, deets.address1, deets.city, deets.state, deets.postcode
+        );
+
+        println!();
+        // print some account deets
+        let voices = na_client.get_acct_invoices().await?;
+        for voice in voices {
+            println!(
+                "ID: {}, Paid On: {}, Status: {}",
+                voice.id, voice.datepaid, voice.status
+            );
+        }
     } else if zoneid > 0 {
         println!();
         // // print out the zone name
