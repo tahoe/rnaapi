@@ -80,8 +80,18 @@ impl NaClient {
         }
     }
 
-    ///Get Data method on client for use by endpoints to fetch the data attribute
+    /// Call the make_request and parse the results
+    /// We want to get the "data" attribute from the response for the calling
+    /// endpoint
     pub async fn get_data(&self, path: &str) -> Result<Value, reqwest::Error> {
+        let result = self.make_request(path).await?;
+        let inner_data: Option<&Value> = result.get("data");
+        let inner_value = inner_data.unwrap_or(&Value::Null).clone();
+        Ok(inner_value)
+    }
+
+    /// Make a request for the client
+    async fn make_request(&self, path: &str) -> Result<Value, reqwest::Error> {
         let mut api_key = self.api_key.clone();
         if path.contains("?") {
             api_key = "&key=".to_owned() + &self.api_key;
@@ -95,10 +105,6 @@ impl NaClient {
             .await?
             .json::<Value>()
             .await?;
-        // Get the value for "data" key out of the result since this is
-        // what we want to build our structs from
-        let inner_data: Option<&Value> = result.get("data");
-        let inner_value = inner_data.unwrap_or(&Value::Null).clone();
-        Ok(inner_value)
+        Ok(result)
     }
 }
