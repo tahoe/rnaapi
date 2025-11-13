@@ -1,9 +1,9 @@
 [package]
 name = "rnaapi"
-version = "0.6.0"
+version = "1.0.0"
 edition = "2024"
 description = "NetActuate API client library"
-license = "MIT"
+license = "GPLv3"
 
 [dependencies]
 hickory-resolver = "0.25.2"

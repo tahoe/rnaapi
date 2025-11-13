@@ -52,7 +52,8 @@ pub struct SOA {
 
 // Get zone/domain info
 impl NaClient {
-    /// Get a single server
+    /// Get a single DNS Zone (domain)
+    /// Requires a Zone ID
     pub async fn get_zone(&self, zoneid: u32) -> Result<Zone, NaApiError> {
         let data = self
             .get_data(&format!("dns/zone/{zoneid}").to_owned())
@@ -61,7 +62,7 @@ impl NaClient {
         Ok(zone)
     }
 
-    /// Get all my servers
+    /// Get all my DNS Zones
     pub async fn get_zones(&self) -> Result<Vec<Zone>, NaApiError> {
         let data = self.get_data("dns/zones?type=NATIVE").await?;
         let zones: Vec<Zone> = serde_json::from_value(data).unwrap();
@@ -87,7 +88,8 @@ pub struct Record {
 
 // Get zone/domain info
 impl NaClient {
-    /// Get a single server
+    /// Get a single DNS record in a zone
+    /// Requires a Record ID
     pub async fn get_record(&self, recordid: u32) -> Result<Record, NaApiError> {
         let data = self
             .get_data(&format!("dns/record/{recordid}").to_owned())
@@ -96,7 +98,8 @@ impl NaClient {
         Ok(record)
     }
 
-    /// Get all my servers
+    /// Get all my DNS records for a zone
+    /// Requires a Zone ID
     pub async fn get_records(&self, zoneid: u32) -> Result<Vec<Record>, NaApiError> {
         let data = self.get_data("dns/records/{zoneid}").await?;
         let records: Vec<Record> = serde_json::from_value(data).unwrap();
