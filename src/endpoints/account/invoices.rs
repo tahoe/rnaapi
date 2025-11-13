@@ -5,6 +5,7 @@ use std::fmt::format;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
+use crate::NaApiError;
 use crate::NaClient;
 
 ///
@@ -36,7 +37,7 @@ pub struct Invoices {
 // Get Details
 impl NaClient {
     /// Get all invoices
-    pub async fn get_acct_invoices(&self) -> Result<Vec<Invoices>, reqwest::Error> {
+    pub async fn get_acct_invoices(&self) -> Result<Vec<Invoices>, NaApiError> {
         let data = self.get_data("account/invoices").await?;
         // println!("Data: {data}");
         let voices: Vec<Invoices> = serde_json::from_value(data).unwrap();

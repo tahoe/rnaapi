@@ -4,6 +4,7 @@ use std::fmt::format;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
+use crate::errors::NaApiError;
 use crate::NaClient;
 
 //
@@ -52,7 +53,7 @@ pub struct SOA {
 // Get zone/domain info
 impl NaClient {
     /// Get a single server
-    pub async fn get_zone(&self, zoneid: u32) -> Result<Zone, reqwest::Error> {
+    pub async fn get_zone(&self, zoneid: u32) -> Result<Zone, NaApiError> {
         let data = self
             .get_data(&format!("dns/zone/{zoneid}").to_owned())
             .await?;
@@ -61,7 +62,7 @@ impl NaClient {
     }
 
     /// Get all my servers
-    pub async fn get_zones(&self) -> Result<Vec<Zone>, reqwest::Error> {
+    pub async fn get_zones(&self) -> Result<Vec<Zone>, NaApiError> {
         let data = self.get_data("dns/zones?type=NATIVE").await?;
         let zones: Vec<Zone> = serde_json::from_value(data).unwrap();
         Ok(zones)
@@ -87,16 +88,16 @@ pub struct Record {
 // Get zone/domain info
 impl NaClient {
     /// Get a single server
-    pub async fn get_record(&self, recordid: u32) -> Result<Record, reqwest::Error> {
+    pub async fn get_record(&self, recordid: u32) -> Result<Record, NaApiError> {
         let data = self
-            .get_data(&format!("dns/redorc/{recordid}").to_owned())
+            .get_data(&format!("dns/record/{recordid}").to_owned())
             .await?;
         let record: Record = serde_json::from_value(data).unwrap();
         Ok(record)
     }
 
     /// Get all my servers
-    pub async fn get_records(&self, zoneid: u32) -> Result<Vec<Record>, reqwest::Error> {
+    pub async fn get_records(&self, zoneid: u32) -> Result<Vec<Record>, NaApiError> {
         let data = self.get_data("dns/records/{zoneid}").await?;
         let records: Vec<Record> = serde_json::from_value(data).unwrap();
         Ok(records)

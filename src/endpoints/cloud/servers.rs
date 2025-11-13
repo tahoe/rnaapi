@@ -5,6 +5,7 @@ use std::fmt::format;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
+use crate::errors::NaApiError;
 use crate::NaClient;
 
 //
@@ -35,7 +36,7 @@ pub struct Server {
 // Get Server
 impl NaClient {
     /// Get a single server
-    pub async fn get_server(&self, mbpkgid: u32) -> Result<Server, reqwest::Error> {
+    pub async fn get_server(&self, mbpkgid: u32) -> Result<Server, NaApiError> {
         let data = self
             .get_data(&format!("cloud/server?mbpkgid={mbpkgid}").to_owned())
             .await?;
@@ -44,7 +45,7 @@ impl NaClient {
     }
 
     /// Get all my servers
-    pub async fn get_servers(&self) -> Result<Vec<Server>, reqwest::Error> {
+    pub async fn get_servers(&self) -> Result<Vec<Server>, NaApiError> {
         let data = self.get_data("cloud/servers").await?;
         let servers: Vec<Server> = serde_json::from_value(data).unwrap();
         Ok(servers)
@@ -70,7 +71,7 @@ pub struct SrvJob {
 // Get Job
 impl NaClient {
     /// Get a single server Job
-    pub async fn get_job(&self, mbpkgid: u32, jobid: u32) -> Result<SrvJob, reqwest::Error> {
+    pub async fn get_job(&self, mbpkgid: u32, jobid: u32) -> Result<SrvJob, NaApiError> {
         let data = self
             .get_data(&format!("cloud/server/{mbpkgid}/{jobid}"))
             .await?;
@@ -79,7 +80,7 @@ impl NaClient {
     }
 
     /// Get all my server Jobs
-    pub async fn get_jobs(&self, mbpkgid: u32) -> Result<Vec<SrvJob>, reqwest::Error> {
+    pub async fn get_jobs(&self, mbpkgid: u32) -> Result<Vec<SrvJob>, NaApiError> {
         let data = self
             .get_data(&format!("cloud/server/{mbpkgid}/jobs"))
             .await?;
@@ -101,7 +102,7 @@ pub struct SrvStatus {
 // Get Server Status
 impl NaClient {
     /// Get server status (up/down/whatever)
-    pub async fn get_status(&self, mbpkgid: u32) -> Result<SrvStatus, reqwest::Error> {
+    pub async fn get_status(&self, mbpkgid: u32) -> Result<SrvStatus, NaApiError> {
         let data = self.get_data(&format!("cloud/status/{mbpkgid}")).await?;
         let srvstatus: SrvStatus = serde_json::from_value(data).unwrap();
         Ok(srvstatus)
@@ -127,7 +128,7 @@ pub struct IPv4 {
 // Get IPv4 Data
 impl NaClient {
     /// Get server's IPv4 addresses
-    pub async fn get_ipv4(&self, mbpkgid: u32) -> Result<Vec<IPv4>, reqwest::Error> {
+    pub async fn get_ipv4(&self, mbpkgid: u32) -> Result<Vec<IPv4>, NaApiError> {
         let data = self
             .get_data(&format!("cloud/ipv4?mbpkgid={mbpkgid}"))
             .await?;
@@ -155,7 +156,7 @@ pub struct IPv6 {
 // Get IPv6 Data
 impl NaClient {
     /// Get server's IPv6 addresses
-    pub async fn get_ipv6(&self, mbpkgid: u32) -> Result<Vec<IPv6>, reqwest::Error> {
+    pub async fn get_ipv6(&self, mbpkgid: u32) -> Result<Vec<IPv6>, NaApiError> {
         let data = self
             .get_data(&format!("cloud/ipv6?mbpkgid={mbpkgid}"))
             .await?;

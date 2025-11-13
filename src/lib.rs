@@ -48,9 +48,9 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use config::API_KEY;
+use config::API_ADDRESS;
+use errors::NaApiError;
 use reqwest::ClientBuilder;
-use reqwest::Error as ReqError;
 use reqwest_hickory_resolver::HickoryResolver;
 use serde_json::Value;
 use std::sync::Arc;
@@ -58,6 +58,7 @@ use std::{error::Error, process};
 
 pub mod config;
 pub mod endpoints;
+pub mod errors;
 
 pub struct NaClient {
     pub address: String,
@@ -79,7 +80,7 @@ impl NaClient {
     }
 
     /// Make a request for the client
-    async fn make_request(&self, path: &str) -> Result<Value, reqwest::Error> {
+    async fn make_request(&self, path: &str) -> Result<Value, NaApiError> {
         let mut api_key = self.api_key.clone();
         if path.contains("?") {
             api_key = "&key=".to_owned() + &self.api_key;
@@ -91,33 +92,44 @@ impl NaClient {
             .http_client
             .get(format!("{}{}{}", self.address, path, api_key))
             .send()
-            .await?
-            .json::<Value>()
-            .await?;
-        Ok(result)
+            .await
+            .map_err(|e| {
+                NaApiError::UnknownError(format!("Failed to finish request with error: {e}"))
+            })?;
+        let result_json = result.json::<Value>().await.map_err(|e| {
+            NaApiError::UnknownError(format!("Failed to finish request with error: {e}"))
+        })?;
+        Ok(result_json)
     }
 
     /// Call the make_request and parse the results
     /// We want to get the "data" attribute from the response for the calling
     /// endpoint. Exit with error message if "data" is not present
     /// This is shitty but it is safe enough so far as I can tell at this point
-    pub async fn get_data(&self, path: &str) -> Result<Value, ReqError> {
+    pub async fn get_data(&self, path: &str) -> Result<Value, NaApiError> {
         // Get the response from make_request method
-        let result = self.make_request(path).await?;
+        let result = self
+            .make_request(path)
+            .await
+            .map_err(|e| NaApiError::UnknownError(format!("Got error: {e}")))?;
 
         // Try to pull the "data" key from the response
-        let inner_data: Option<&Value> = match result.get("data") {
-            Some(b) => result.get("data"),
-            None => {
-                println!("Failed to get data for some reason");
-                println!("Result was: {result}");
-                process::exit(1)
+        let result_value: Option<&Value> = result.get("data");
+        if let Some(inner_data) = result_value {
+            Ok(inner_data.clone())
+        } else {
+            let result_message = result.get("message");
+            if let Some(message) = result_message {
+                let code = result.get("code").unwrap();
+                Err(NaApiError::APIKeyInvalid(format!("{code}: {message}")))
+            } else {
+                Err(NaApiError::UnknownError(format!(
+                    "Could not reach: {}{}",
+                    API_ADDRESS.to_owned(),
+                    path
+                )))
             }
-        };
-
-        // Try to unwrap the inner data, should be Value or None
-        let inner_value = inner_data.unwrap_or(&Value::Null).clone();
-        Ok(inner_value)
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "rnaapi"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 description = "NetActuate API client library"
 license = "MIT"
@@ -18,6 +18,8 @@ axum = "0.8.6"
 lazy_static = "1.5.0"
 dotenvy = "0.15.7"
 chrono = {version = "0.4.42", features = ["serde"]}
+thiserror = "2.0.17"
+anyhow = "1.0.100"
 
 [lints.rust]
 unused_imports = "allow"

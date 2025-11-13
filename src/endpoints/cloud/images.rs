@@ -7,6 +7,7 @@ fn print_type<T>(_: &T) {
     println!("{}", type_name::<T>());
 }
 
+use crate::errors::NaApiError;
 use crate::NaClient;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -32,7 +33,7 @@ pub struct Image {
 //
 impl NaClient {
     /// Get a list of available OS images
-    pub async fn get_images(&self) -> Result<Vec<Image>, reqwest::Error> {
+    pub async fn get_images(&self) -> Result<Vec<Image>, NaApiError> {
         let data = self.get_data("cloud/images").await?;
         let image_list: Vec<Image> = serde_json::from_value(data).unwrap();
         Ok(image_list)

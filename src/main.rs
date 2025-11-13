@@ -25,17 +25,18 @@
 //!
 //! That's it.
 //!
+use anyhow::Result;
 use clap::Parser;
 use rnaapi::config::{API_ADDRESS, API_KEY};
 use rnaapi::NaClient;
 use serde::Serialize;
-use serde_json::{Result, Value};
+use serde_json::Value;
 use std::env;
 use std::fmt::format;
 use std::sync::Arc;
 
 #[tokio::main]
-async fn main() -> reqwest::Result<()> {
+async fn main() -> Result<()> {
     //! Test/Example "main" function, right now it just takes
     //! one argument, `-m <mbpkgid>` if not given, returns all the servers you own
 

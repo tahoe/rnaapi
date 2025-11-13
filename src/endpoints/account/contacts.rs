@@ -4,4 +4,5 @@ use std::fmt::format;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
+use crate::NaApiError;
 use crate::NaClient;
