@@ -25,6 +25,9 @@
 //!
 //! That's it.
 //!
+// Copyright (C) 2025 Dennis Durling
+// This file is part of RNAAPI Rust API Client Library, licensed
+// under the GNU General Public License v3.0
 use anyhow::Result;
 use clap::Parser;
 use rnaapi::config::{API_ADDRESS, API_KEY};
