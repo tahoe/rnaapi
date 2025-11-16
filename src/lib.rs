@@ -26,8 +26,8 @@
 //! ## Import the config that uses the environment
 //!
 //! ```rust
-//! use rnaapi::config::{API_ADDRESS, API_KEY}
-//! use rnaapi::NaClient
+//! use rnaapi::config::Settings;
+//! use rnaapi::NaClient;
 //! // whatever other libraries you want to use like serde_json, serde::Serialize...
 //! ```
 //!
@@ -35,7 +35,8 @@
 //!
 //! ```rust
 //! // with above imports
-//! let client = NaClient::new(API_KEY.to_owned(), API_ADDRESS.to_owned()).await;
+//! let settings = Settings.new();
+//! let client = NaClient::new(settings.api_key, settings.api_url).await;
 //! let servers = client.get_servers().await;
 //! for server in servers {
 //!     println!("fqdn: {}, mbpkgid: {}", server.fqdn, server.mbpkgid);
@@ -51,7 +52,6 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use config::API_ADDRESS;
 use errors::NaApiError;
 use reqwest::ClientBuilder;
 use reqwest_hickory_resolver::HickoryResolver;
@@ -128,8 +128,7 @@ impl NaClient {
             } else {
                 Err(NaApiError::UnknownError(format!(
                     "Could not reach: {}{}",
-                    API_ADDRESS.to_owned(),
-                    path
+                    self.api_key, path
                 )))
             }
         }

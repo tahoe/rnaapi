@@ -30,7 +30,7 @@
 // under the GNU General Public License v3.0
 use anyhow::Result;
 use clap::Parser;
-use rnaapi::config::{API_ADDRESS, API_KEY};
+use rnaapi::config::Settings;
 use rnaapi::NaClient;
 use serde::Serialize;
 use serde_json::Value;
@@ -42,6 +42,9 @@ use std::sync::Arc;
 async fn main() -> Result<()> {
     //! Test/Example "main" function, right now it just takes
     //! one argument, `-m <mbpkgid>` if not given, returns all the servers you own
+
+    // Get settings from config
+    let settings = Settings::new()?;
 
     // Defaults
     let mut mbpkgid: u32 = 0;
@@ -59,7 +62,8 @@ async fn main() -> Result<()> {
     }
 
     // playing with new constructor for client
-    let na_client = NaClient::new(API_KEY.to_owned(), API_ADDRESS.to_owned()).await;
+    // let na_client = NaClient::new(API_KEY.to_owned(), API_ADDRESS.to_owned()).await;
+    let na_client = NaClient::new(settings.api_key, settings.api_url).await;
 
     if mbpkgid > 0 {
         // print basic server info

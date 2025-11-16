@@ -3,33 +3,45 @@
 // under the GNU General Public License v3.0
 use dotenvy::dotenv;
 use lazy_static::lazy_static;
+use serde::Deserialize;
 use std::env as std_env;
 
-lazy_static! {
-    #[derive(Debug)]
-    pub static ref API_ADDRESS: String = set_address();
+use crate::errors::NaApiError;
+
+#[derive(Debug, Deserialize)]
+pub struct Settings {
+    pub api_key: String,
+    pub api_url: String,
 }
 
-fn set_address() -> String {
-    dotenv().ok();
-    let address =
-        std_env::var("API_ADDRESS").expect("API_ADDRESS needs to be set in the env or .env file");
-    if address.is_empty() {
-        panic!("API_ADDRESS must not be empty!");
+impl Settings {
+    // manuall set api address
+    pub const API_ADDRESS: &str = "https://vapi2.netactuate.com/api/";
+
+    pub fn new() -> Result<Settings, NaApiError> {
+        Ok(Settings {
+            api_key: set_key()?,
+            api_url: Self::API_ADDRESS.to_string(),
+        })
     }
-    address
 }
 
-lazy_static! {
-    #[derive(Debug)]
-    pub static ref API_KEY: String = set_key();
-}
-
-fn set_key() -> String {
+fn set_key() -> Result<String, NaApiError> {
     dotenv().ok();
-    let apikey = std_env::var("API_KEY").expect("APP_KEY needs to be set in the env or .env file");
-    if apikey.is_empty() {
-        panic!("API_KEY must not be empty!");
-    }
-    apikey
+    let apikey = match std_env::var("API_KEY") {
+        Ok(key) => {
+            if key.is_empty() {
+                return Err(NaApiError::APIKeyInvalid(
+                    "API_KEY is set but empty!".to_string(),
+                ));
+            }
+            Ok(key)
+        }
+        Err(err) => {
+            return Err(NaApiError::APIKeyInvalid(
+                "API_KEY not set in ENV".to_string(),
+            ))
+        }
+    };
+    Ok(apikey)?
 }
