@@ -30,8 +30,8 @@
 // under the GNU General Public License v3.0
 use anyhow::Result;
 use clap::Parser;
-use rnaapi::config::Settings;
 use rnaapi::NaClient;
+use rnaapi::config::Settings;
 use serde::Serialize;
 use serde_json::Value;
 use std::env;
@@ -73,10 +73,21 @@ async fn main() -> Result<()> {
             srv.domu_package, srv.fqdn, srv.mbpkgid
         );
 
+        // submit jobs to the tokio async runtime
+        // this automatically awaits so no need for .await
+        let (jobs, ipv4s, ipv6s, stat, ssh_keys, deets, voices) = tokio::join!(
+            na_client.get_jobs(mbpkgid),
+            na_client.get_ipv4(mbpkgid),
+            na_client.get_ipv6(mbpkgid),
+            na_client.get_status(mbpkgid),
+            na_client.get_ssh_keys(),
+            na_client.get_acct_details(),
+            na_client.get_acct_invoices()
+        );
+
         println!();
-        // print jobs
-        let jobs = na_client.get_jobs(mbpkgid).await?;
-        for job in jobs {
+        // print the job data
+        for job in jobs.unwrap() {
             println!(
                 "Inserted: {}, Status: {}, command: {}",
                 job.ts_insert, job.status, job.command
@@ -85,8 +96,7 @@ async fn main() -> Result<()> {
 
         println!();
         // print IPv4 Addresses
-        let ipv4s = na_client.get_ipv4(mbpkgid).await?;
-        for ipv4 in ipv4s {
+        for ipv4 in ipv4s.unwrap() {
             println!(
                 "Reverse: {}, IP: {}, Gateway: {}",
                 ipv4.reverse, ipv4.ip, ipv4.gateway
@@ -95,8 +105,7 @@ async fn main() -> Result<()> {
 
         println!();
         // print IPv6 Addresses
-        let ipv6s = na_client.get_ipv6(mbpkgid).await?;
-        for ipv6 in ipv6s {
+        for ipv6 in ipv6s.unwrap() {
             println!(
                 "Reverse: {}, IP: {}, Gateway: {}",
                 ipv6.reverse, ipv6.ip, ipv6.gateway
@@ -105,28 +114,28 @@ async fn main() -> Result<()> {
 
         println!();
         // print server status, very unverbose
-        let stat = na_client.get_status(mbpkgid).await?;
-        println!("Status: {}", stat.status);
+        println!("Status: {}", stat.unwrap().status);
 
         println!();
         // print some ssh keys
-        let ssh_keys = na_client.get_ssh_keys().await?;
-        for sshkey in ssh_keys {
+        for sshkey in ssh_keys.unwrap() {
             println!("Key: {}, Created At: {}", sshkey.name, sshkey.created_at);
         }
 
         println!();
         // print some account deets
-        let deets = na_client.get_acct_details().await?;
         println!(
-            "FullName: {}, Address: {}, {} {} {}",
-            deets.fullname, deets.address1, deets.city, deets.state, deets.postcode
+            "FullName: {:?}, Address: {:?}, {:?} {:?} {:?}",
+            deets.clone().unwrap().fullname,
+            deets.clone().unwrap().address1,
+            deets.clone().unwrap().city,
+            deets.clone().unwrap().state,
+            deets.clone().unwrap().postcode
         );
 
         println!();
         // print some account deets
-        let voices = na_client.get_acct_invoices().await?;
-        for voice in voices {
+        for voice in voices.unwrap() {
             println!(
                 "ID: {}, Paid On: {}, Status: {}",
                 voice.id, voice.datepaid, voice.status
@@ -150,29 +159,35 @@ async fn main() -> Result<()> {
         let nsrecs = zone.ns.unwrap();
         println!("1st NS: {}", nsrecs[0])
     } else {
-        let srvrs = na_client.get_servers().await?;
-        for srvr in srvrs {
+        // submit jobs to the tokio async runtime
+        // this automatically awaits so no need for .await
+        let (srvrs, locs, pkgs, imgs, zones) = tokio::join!(
+            na_client.get_servers(),
+            na_client.get_locations(),
+            na_client.get_packages(),
+            na_client.get_images(),
+            na_client.get_zones(),
+        );
+
+        for srvr in srvrs.unwrap() {
             println!("fqdn: {}, mbpkgid: {}", srvr.fqdn, srvr.mbpkgid);
         }
 
         println!();
         // list locations
-        let locs = na_client.get_locations().await?;
-        for loc in locs {
+        for loc in locs.unwrap() {
             println!("Name: {}, Continent: {}", loc.name, loc.continent);
         }
 
         println!();
         // list packages
-        let pkgs = na_client.get_packages().await?;
-        for pkg in pkgs {
+        for pkg in pkgs.unwrap() {
             println!("Name: {}, Continent: {}", pkg.name, pkg.city);
         }
 
         println!();
         // list images
-        let imgs = na_client.get_images().await?;
-        for img in imgs {
+        for img in imgs.unwrap() {
             println!(
                 "ID: {}, Size: {}, Name: {}",
                 img.id,
@@ -183,8 +198,7 @@ async fn main() -> Result<()> {
 
         println!();
         // list dns zones
-        let zones = na_client.get_zones().await?;
-        for zone in zones {
+        for zone in zones.unwrap() {
             println!(
                 "ID: {}, Size: {}, Name: {}",
                 zone.id, zone.name, zone.zone_type

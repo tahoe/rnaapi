@@ -3,7 +3,7 @@
 // under the GNU General Public License v3.0
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 #[non_exhaustive]
 pub enum NaApiError {
     #[error("{0}")]
