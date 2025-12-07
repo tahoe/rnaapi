@@ -38,4 +38,10 @@ impl NaClient {
         let ssh_keys: Vec<SSHKeys> = serde_json::from_value(data).unwrap();
         Ok(ssh_keys)
     }
+
+    pub async fn get_ssh_key(&self, keyid: u32) -> Result<SSHKeys, NaApiError> {
+        let data = self.get_data("account/ssh_key/{keyid}").await?;
+        let ssh_key: SSHKeys = serde_json::from_value(data).unwrap();
+        Ok(ssh_key)
+    }
 }

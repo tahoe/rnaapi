@@ -32,6 +32,7 @@ use anyhow::Result;
 use clap::Parser;
 use rnaapi::NaClient;
 use rnaapi::config::Settings;
+use rnaapi::endpoints::invoices;
 use serde::Serialize;
 use serde_json::Value;
 use std::env;
@@ -68,15 +69,12 @@ async fn main() -> Result<()> {
     if mbpkgid > 0 {
         // submit jobs to the tokio async runtime
         // this automatically awaits so no need for .await
-        let (srv, jobs, ipv4s, ipv6s, stat, ssh_keys, deets, voices) = tokio::join!(
+        let (srv, jobs, ipv4s, ipv6s, stat) = tokio::join!(
             na_client.get_server(mbpkgid),
             na_client.get_jobs(mbpkgid),
             na_client.get_ipv4(mbpkgid),
             na_client.get_ipv6(mbpkgid),
             na_client.get_status(mbpkgid),
-            na_client.get_ssh_keys(),
-            na_client.get_acct_details(),
-            na_client.get_acct_invoices()
         );
 
         // print basic server info
@@ -117,29 +115,6 @@ async fn main() -> Result<()> {
         println!();
         // print server status, very unverbose
         println!("Status: {}", stat.unwrap().status);
-
-        println!();
-        // print some ssh keys
-        for sshkey in ssh_keys.unwrap() {
-            println!("Key: {}", sshkey.name);
-        }
-
-        println!();
-        // print some account deets
-        println!(
-            "FullName: {:?}, Address: {:?}, {:?} {:?} {:?}",
-            deets.clone().unwrap().fullname,
-            deets.clone().unwrap().address1,
-            deets.clone().unwrap().city,
-            deets.clone().unwrap().state,
-            deets.clone().unwrap().postcode
-        );
-
-        println!();
-        // print some account deets
-        for voice in voices.unwrap() {
-            println!("ID: {}, Status: {}", voice.id, voice.status);
-        }
     } else if zoneid > 0 {
         println!();
         // // print out the zone name
@@ -160,12 +135,15 @@ async fn main() -> Result<()> {
     } else {
         // submit jobs to the tokio async runtime
         // this automatically awaits so no need for .await
-        let (srvrs, locs, pkgs, imgs, zones) = tokio::join!(
+        let (srvrs, locs, pkgs, imgs, zones, ssh_keys, deets) = tokio::join!(
             na_client.get_servers(),
             na_client.get_locations(),
             na_client.get_packages(),
             na_client.get_images(),
             na_client.get_zones(),
+            na_client.get_ssh_keys(),
+            na_client.get_acct_details(),
+            // na_client.get_acct_invoices()
         );
 
         for srvr in srvrs.unwrap() {
@@ -203,6 +181,32 @@ async fn main() -> Result<()> {
                 zone.id, zone.name, zone.zone_type
             );
         }
+
+        println!();
+        // print some ssh keys
+        for sshkey in ssh_keys.unwrap() {
+            println!(
+                "Key: {}, Fingerprint: {}",
+                sshkey.name, sshkey.fingerprint
+            );
+        }
+
+        println!();
+        // print some account deets
+        println!(
+            "FullName: {:?}, Address: {:?}, {:?} {:?} {:?}",
+            deets.clone().unwrap().fullname,
+            deets.clone().unwrap().address1,
+            deets.clone().unwrap().city,
+            deets.clone().unwrap().state,
+            deets.clone().unwrap().postcode
+        );
+
+        // println!();
+        // // print some account deets
+        // for invoice in invoices.unwrap() {
+        //     println!("ID: {}, Status: {}", invoice.id, invoice.status);
+        // }
     }
 
     Ok(())
