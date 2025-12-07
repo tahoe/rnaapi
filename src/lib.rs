@@ -83,7 +83,7 @@ impl NaClient {
     }
 
     /// Make a request for the client
-    async fn make_request(&self, path: &str) -> Result<Value, NaApiError> {
+    async fn get(&self, path: &str) -> Result<Value, NaApiError> {
         let mut api_key = self.api_key.clone();
         if path.contains("?") {
             api_key = "&key=".to_owned() + &self.api_key;
@@ -109,14 +109,14 @@ impl NaClient {
         Ok(result_json)
     }
 
-    /// Call the make_request and parse the results
+    /// Call the get and parse the results
     /// We want to get the "data" attribute from the response for the calling
     /// endpoint. Exit with error message if "data" is not present
     /// This is shitty but it is safe enough so far as I can tell at this point
     pub async fn get_data(&self, path: &str) -> Result<Value, NaApiError> {
-        // Get the response from make_request method
+        // Get the response from get method
         let result = self
-            .make_request(path)
+            .get(path)
             .await
             .map_err(|e| NaApiError::UnknownError(format!("Got error: {e}")))?;
 
@@ -138,6 +138,87 @@ impl NaClient {
         }
     }
 }
+
+// /// Make a request for the client
+// async fn post(&self, path: &str) -> Result<Value, NaApiError> {
+//     let mut api_key = self.api_key.clone();
+//     if path.contains("?") {
+//         api_key = "&key=".to_owned() + &self.api_key;
+//     } else {
+//         api_key = "?key=".to_owned() + &self.api_key;
+//     }
+//     // println!("{}{}{}", self.address, path, api_key);
+//     let result = self
+//         .http_client
+//         .get(format!("{}{}{}", self.address, path, api_key))
+//         .send()
+//         .await
+//         .map_err(|e| {
+//             NaApiError::UnknownError(format!(
+//                 "Failed to finish request with error: {e}"
+//             ))
+//         })?;
+//     let result_json = result.json::<Value>().await.map_err(|e| {
+//         NaApiError::UnknownError(format!(
+//             "Failed to finish request with error: {e}"
+//         ))
+//     })?;
+//     Ok(result_json)
+// }
+
+// /// Make a request for the client
+// async fn put(&self, path: &str) -> Result<Value, NaApiError> {
+//     let mut api_key = self.api_key.clone();
+//     if path.contains("?") {
+//         api_key = "&key=".to_owned() + &self.api_key;
+//     } else {
+//         api_key = "?key=".to_owned() + &self.api_key;
+//     }
+//     // println!("{}{}{}", self.address, path, api_key);
+//     let result = self
+//         .http_client
+//         .get(format!("{}{}{}", self.address, path, api_key))
+//         .send()
+//         .await
+//         .map_err(|e| {
+//             NaApiError::UnknownError(format!(
+//                 "Failed to finish request with error: {e}"
+//             ))
+//         })?;
+//     let result_json = result.json::<Value>().await.map_err(|e| {
+//         NaApiError::UnknownError(format!(
+//             "Failed to finish request with error: {e}"
+//         ))
+//     })?;
+//     Ok(result_json)
+// }
+
+// /// Make a request for the client
+// async fn delete(&self, path: &str) -> Result<Value, NaApiError> {
+//     let mut api_key = self.api_key.clone();
+//     if path.contains("?") {
+//         api_key = "&key=".to_owned() + &self.api_key;
+//     } else {
+//         api_key = "?key=".to_owned() + &self.api_key;
+//     }
+//     // println!("{}{}{}", self.address, path, api_key);
+//     let result = self
+//         .http_client
+//         .get(format!("{}{}{}", self.address, path, api_key))
+//         .send()
+//         .await
+//         .map_err(|e| {
+//             NaApiError::UnknownError(format!(
+//                 "Failed to finish request with error: {e}"
+//             ))
+//         })?;
+//     let result_json = result.json::<Value>().await.map_err(|e| {
+//         NaApiError::UnknownError(format!(
+//             "Failed to finish request with error: {e}"
+//         ))
+//     })?;
+//     Ok(result_json)
+// }
 
 // // Define a module to hold the custom serialization/deserialization logic.
 // // This is kind of BS to have to do...
