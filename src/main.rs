@@ -135,7 +135,7 @@ async fn main() -> Result<()> {
     } else {
         // submit jobs to the tokio async runtime
         // this automatically awaits so no need for .await
-        let (srvrs, locs, pkgs, imgs, zones, ssh_keys, deets) = tokio::join!(
+        let (srvrs, locs, pkgs, imgs, zones, ssh_keys, deets, invoices) = tokio::join!(
             na_client.get_servers(),
             na_client.get_locations(),
             na_client.get_packages(),
@@ -143,7 +143,7 @@ async fn main() -> Result<()> {
             na_client.get_zones(),
             na_client.get_ssh_keys(),
             na_client.get_acct_details(),
-            // na_client.get_acct_invoices()
+            na_client.get_acct_invoices()
         );
 
         for srvr in srvrs.unwrap() {
@@ -202,11 +202,11 @@ async fn main() -> Result<()> {
             deets.clone().unwrap().postcode
         );
 
-        // println!();
-        // // print some account deets
-        // for invoice in invoices.unwrap() {
-        //     println!("ID: {}, Status: {}", invoice.id, invoice.status);
-        // }
+        println!();
+        // print some of the invoices, say 3?
+        for invoice in invoices.unwrap().iter().take(3) {
+            println!("ID: {}, Status: {}", invoice.id, invoice.status);
+        }
     }
 
     Ok(())
