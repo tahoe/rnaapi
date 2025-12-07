@@ -7,8 +7,8 @@ use std::fmt::format;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
-use crate::errors::NaApiError;
 use crate::NaClient;
+use crate::errors::NaApiError;
 
 //
 // Zone ttl key type since it changes between
@@ -93,7 +93,9 @@ pub struct Record {
 impl NaClient {
     /// Get a single DNS record in a zone
     /// Requires a Record ID
-    pub async fn get_record(&self, recordid: u32) -> Result<Record, NaApiError> {
+    pub async fn get_record(
+        &self, recordid: u32,
+    ) -> Result<Record, NaApiError> {
         let data = self
             .get_data(&format!("dns/record/{recordid}").to_owned())
             .await?;
@@ -103,7 +105,9 @@ impl NaClient {
 
     /// Get all my DNS records for a zone
     /// Requires a Zone ID
-    pub async fn get_records(&self, zoneid: u32) -> Result<Vec<Record>, NaApiError> {
+    pub async fn get_records(
+        &self, zoneid: u32,
+    ) -> Result<Vec<Record>, NaApiError> {
         let data = self.get_data("dns/records/{zoneid}").await?;
         let records: Vec<Record> = serde_json::from_value(data).unwrap();
         Ok(records)

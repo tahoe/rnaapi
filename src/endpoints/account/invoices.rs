@@ -32,9 +32,9 @@ pub struct Invoices {
     // #[serde(with = "custom_datetime_format_seconds")]
     // pub updated_at: NaiveDateTime,
     //
-    pub datepaid: String,
-    pub created_at: String,
-    pub updated_at: String,
+    // pub datepaid: String,
+    // pub created_at: String,
+    // pub updated_at: String,
 }
 
 // Get Details

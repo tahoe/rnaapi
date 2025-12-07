@@ -18,7 +18,6 @@ use crate::NaClient;
 #[serde(rename_all = "snake_case")]
 pub struct SSHKeys {
     pub id: u32,
-    pub mb_id: u32,
     pub ssh_key: String,
     pub fingerprint: String,
     pub name: String,
@@ -26,8 +25,9 @@ pub struct SSHKeys {
     // pub created_at: NaiveDateTime,
     // #[serde(with = "custom_datetime_format_microseconds")]
     // pub updated_at: NaiveDateTime,
-    pub created_at: String,
-    pub updated_at: String,
+    // pub mb_id: u32,
+    // pub created_at: String,
+    // pub updated_at: String,
 }
 
 // Get Details

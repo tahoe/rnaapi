@@ -66,16 +66,10 @@ async fn main() -> Result<()> {
     let na_client = NaClient::new(settings.api_key, settings.api_url).await;
 
     if mbpkgid > 0 {
-        // print basic server info
-        let srv = na_client.get_server(mbpkgid).await?;
-        println!(
-            "Package: {}, fqdn: {}, mbpkgid: {}",
-            srv.domu_package, srv.fqdn, srv.mbpkgid
-        );
-
         // submit jobs to the tokio async runtime
         // this automatically awaits so no need for .await
-        let (jobs, ipv4s, ipv6s, stat, ssh_keys, deets, voices) = tokio::join!(
+        let (srv, jobs, ipv4s, ipv6s, stat, ssh_keys, deets, voices) = tokio::join!(
+            na_client.get_server(mbpkgid),
             na_client.get_jobs(mbpkgid),
             na_client.get_ipv4(mbpkgid),
             na_client.get_ipv6(mbpkgid),
@@ -83,6 +77,14 @@ async fn main() -> Result<()> {
             na_client.get_ssh_keys(),
             na_client.get_acct_details(),
             na_client.get_acct_invoices()
+        );
+
+        // print basic server info
+        println!(
+            "Package: {}, fqdn: {}, mbpkgid: {}",
+            srv.clone().unwrap().domu_package,
+            srv.clone().unwrap().fqdn,
+            srv.clone().unwrap().mbpkgid
         );
 
         println!();
@@ -119,7 +121,7 @@ async fn main() -> Result<()> {
         println!();
         // print some ssh keys
         for sshkey in ssh_keys.unwrap() {
-            println!("Key: {}, Created At: {}", sshkey.name, sshkey.created_at);
+            println!("Key: {}", sshkey.name);
         }
 
         println!();
@@ -136,10 +138,7 @@ async fn main() -> Result<()> {
         println!();
         // print some account deets
         for voice in voices.unwrap() {
-            println!(
-                "ID: {}, Paid On: {}, Status: {}",
-                voice.id, voice.datepaid, voice.status
-            );
+            println!("ID: {}, Status: {}", voice.id, voice.status);
         }
     } else if zoneid > 0 {
         println!();
