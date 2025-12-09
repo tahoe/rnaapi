@@ -30,14 +30,8 @@
 // under the GNU General Public License v3.0
 use anyhow::Result;
 use clap::Parser;
-use rnaapi::NaClient;
 use rnaapi::config::Settings;
-use rnaapi::endpoints::invoices;
-use serde::Serialize;
-use serde_json::Value;
-use std::env;
-use std::fmt::format;
-use std::sync::Arc;
+use rnaapi::NaClient;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -185,10 +179,7 @@ async fn main() -> Result<()> {
         println!();
         // print some ssh keys
         for sshkey in ssh_keys.unwrap() {
-            println!(
-                "Key: {}, Fingerprint: {}",
-                sshkey.name, sshkey.fingerprint
-            );
+            println!("Key: {}, Fingerprint: {}", sshkey.name, sshkey.fingerprint);
         }
 
         println!();

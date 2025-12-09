@@ -21,5 +21,3 @@ chrono = {version = "0.4.42", features = ["serde"]}
 thiserror = "2.0.17"
 anyhow = "1.0.100"
 
-[lints.rust]
-unused_imports = "allow"
