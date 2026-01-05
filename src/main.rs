@@ -30,8 +30,8 @@
 // under the GNU General Public License v3.0
 use anyhow::Result;
 use clap::Parser;
-use rnaapi::config::Settings;
 use rnaapi::NaClient;
+use rnaapi::config::Settings;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -72,11 +72,12 @@ async fn main() -> Result<()> {
         );
 
         // print basic server info
+        let srv = srv?;
         println!(
             "Package: {}, fqdn: {}, mbpkgid: {}",
-            srv.clone().unwrap().domu_package,
-            srv.clone().unwrap().fqdn,
-            srv.clone().unwrap().mbpkgid
+            srv.clone().domu_package,
+            srv.clone().fqdn,
+            srv.clone().mbpkgid
         );
 
         println!();
@@ -179,18 +180,22 @@ async fn main() -> Result<()> {
         println!();
         // print some ssh keys
         for sshkey in ssh_keys.unwrap() {
-            println!("Key: {}, Fingerprint: {}", sshkey.name, sshkey.fingerprint);
+            println!(
+                "Key: {}, Fingerprint: {}",
+                sshkey.name, sshkey.fingerprint
+            );
         }
 
         println!();
         // print some account deets
+        let deets = deets?;
         println!(
             "FullName: {:?}, Address: {:?}, {:?} {:?} {:?}",
-            deets.clone().unwrap().fullname,
-            deets.clone().unwrap().address1,
-            deets.clone().unwrap().city,
-            deets.clone().unwrap().state,
-            deets.clone().unwrap().postcode
+            deets.clone().fullname,
+            deets.clone().address1,
+            deets.clone().city,
+            deets.clone().state,
+            deets.clone().postcode
         );
 
         println!();
