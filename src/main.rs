@@ -75,9 +75,7 @@ async fn main() -> Result<()> {
         let srv = srv?;
         println!(
             "Package: {}, fqdn: {}, mbpkgid: {}",
-            srv.clone().domu_package,
-            srv.clone().fqdn,
-            srv.clone().mbpkgid
+            srv.domu_package, srv.fqdn, srv.mbpkgid
         );
 
         println!();
@@ -191,11 +189,11 @@ async fn main() -> Result<()> {
         let deets = deets?;
         println!(
             "FullName: {:?}, Address: {:?}, {:?} {:?} {:?}",
-            deets.clone().fullname,
-            deets.clone().address1,
-            deets.clone().city,
-            deets.clone().state,
-            deets.clone().postcode
+            deets.fullname,
+            deets.address1,
+            deets.city,
+            deets.state,
+            deets.postcode
         );
 
         println!();
