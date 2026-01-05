@@ -2,9 +2,6 @@
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
 #![allow(clippy::too_many_arguments)]
-use std::fmt::format;
-
-use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 use crate::NaClient;
@@ -108,7 +105,9 @@ impl NaClient {
     pub async fn get_records(
         &self, zoneid: u32,
     ) -> Result<Vec<Record>, NaApiError> {
-        let data = self.get_data("dns/records/{zoneid}").await?;
+        let data = self
+            .get_data(&format!("dns/records/{zoneid}").to_owned())
+            .await?;
         let records: Vec<Record> = serde_json::from_value(data).unwrap();
         Ok(records)
     }

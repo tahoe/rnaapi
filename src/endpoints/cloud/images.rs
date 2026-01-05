@@ -1,17 +1,10 @@
 // Copyright (C) 2025 Dennis Durling
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
-use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-use std::any::type_name;
 
-fn print_type<T>(_: &T) {
-    println!("{}", type_name::<T>());
-}
-
-use crate::errors::NaApiError;
 use crate::NaClient;
+use crate::errors::NaApiError;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

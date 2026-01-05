@@ -2,14 +2,10 @@
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
 #![allow(clippy::too_many_arguments)]
-// use crate::custom_datetime_format_seconds;
-use std::fmt::format;
-
-use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
-use crate::errors::NaApiError;
 use crate::NaClient;
+use crate::errors::NaApiError;
 
 //
 // Server struct
@@ -75,7 +71,9 @@ pub struct SrvJob {
 impl NaClient {
     /// Get a single server Job
     /// Requires mbpkgid AND Job ID
-    pub async fn get_job(&self, mbpkgid: u32, jobid: u32) -> Result<SrvJob, NaApiError> {
+    pub async fn get_job(
+        &self, mbpkgid: u32, jobid: u32,
+    ) -> Result<SrvJob, NaApiError> {
         let data = self
             .get_data(&format!("cloud/server/{mbpkgid}/{jobid}"))
             .await?;
@@ -85,7 +83,9 @@ impl NaClient {
 
     /// Get all my server Jobs
     /// Requires mbpkgid
-    pub async fn get_jobs(&self, mbpkgid: u32) -> Result<Vec<SrvJob>, NaApiError> {
+    pub async fn get_jobs(
+        &self, mbpkgid: u32,
+    ) -> Result<Vec<SrvJob>, NaApiError> {
         let data = self
             .get_data(&format!("cloud/server/{mbpkgid}/jobs"))
             .await?;
@@ -108,7 +108,9 @@ pub struct SrvStatus {
 impl NaClient {
     /// Get server status (up/down/whatever)
     /// Requires mbpkgid
-    pub async fn get_status(&self, mbpkgid: u32) -> Result<SrvStatus, NaApiError> {
+    pub async fn get_status(
+        &self, mbpkgid: u32,
+    ) -> Result<SrvStatus, NaApiError> {
         let data = self.get_data(&format!("cloud/status/{mbpkgid}")).await?;
         let srvstatus: SrvStatus = serde_json::from_value(data).unwrap();
         Ok(srvstatus)
@@ -135,7 +137,9 @@ pub struct IPv4 {
 impl NaClient {
     /// Get server's IPv4 addresses
     /// Requires mbpkgid
-    pub async fn get_ipv4(&self, mbpkgid: u32) -> Result<Vec<IPv4>, NaApiError> {
+    pub async fn get_ipv4(
+        &self, mbpkgid: u32,
+    ) -> Result<Vec<IPv4>, NaApiError> {
         let data = self
             .get_data(&format!("cloud/ipv4?mbpkgid={mbpkgid}"))
             .await?;
@@ -164,7 +168,9 @@ pub struct IPv6 {
 impl NaClient {
     /// Get server's IPv6 addresses
     /// Requires mbpkgid
-    pub async fn get_ipv6(&self, mbpkgid: u32) -> Result<Vec<IPv6>, NaApiError> {
+    pub async fn get_ipv6(
+        &self, mbpkgid: u32,
+    ) -> Result<Vec<IPv6>, NaApiError> {
         let data = self
             .get_data(&format!("cloud/ipv6?mbpkgid={mbpkgid}"))
             .await?;

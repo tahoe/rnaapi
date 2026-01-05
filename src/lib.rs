@@ -47,17 +47,11 @@
 // Copyright (C) 2025 Dennis Durling
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
-#![allow(unused)]
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
-};
 use errors::NaApiError;
 use reqwest::ClientBuilder;
 use reqwest_hickory_resolver::HickoryResolver;
 use serde_json::Value;
 use std::sync::Arc;
-use std::{error::Error, process};
 
 pub mod config;
 pub mod endpoints;
@@ -84,13 +78,11 @@ impl NaClient {
 
     /// Make a request for the client
     async fn get(&self, path: &str) -> Result<Value, NaApiError> {
-        let mut api_key = self.api_key.clone();
-        if path.contains("?") {
-            api_key = "&key=".to_owned() + &self.api_key;
+        let api_key = if path.contains("?") {
+            format!("&key={}", &self.api_key)
         } else {
-            api_key = "?key=".to_owned() + &self.api_key;
-        }
-        // println!("{}{}{}", self.address, path, api_key);
+            format!("?key={}", &self.api_key)
+        };
         let result = self
             .http_client
             .get(format!("{}{}{}", self.address, path, api_key))
@@ -138,141 +130,3 @@ impl NaClient {
         }
     }
 }
-
-// /// Make a request for the client
-// async fn post(&self, path: &str) -> Result<Value, NaApiError> {
-//     let mut api_key = self.api_key.clone();
-//     if path.contains("?") {
-//         api_key = "&key=".to_owned() + &self.api_key;
-//     } else {
-//         api_key = "?key=".to_owned() + &self.api_key;
-//     }
-//     // println!("{}{}{}", self.address, path, api_key);
-//     let result = self
-//         .http_client
-//         .get(format!("{}{}{}", self.address, path, api_key))
-//         .send()
-//         .await
-//         .map_err(|e| {
-//             NaApiError::UnknownError(format!(
-//                 "Failed to finish request with error: {e}"
-//             ))
-//         })?;
-//     let result_json = result.json::<Value>().await.map_err(|e| {
-//         NaApiError::UnknownError(format!(
-//             "Failed to finish request with error: {e}"
-//         ))
-//     })?;
-//     Ok(result_json)
-// }
-
-// /// Make a request for the client
-// async fn put(&self, path: &str) -> Result<Value, NaApiError> {
-//     let mut api_key = self.api_key.clone();
-//     if path.contains("?") {
-//         api_key = "&key=".to_owned() + &self.api_key;
-//     } else {
-//         api_key = "?key=".to_owned() + &self.api_key;
-//     }
-//     // println!("{}{}{}", self.address, path, api_key);
-//     let result = self
-//         .http_client
-//         .get(format!("{}{}{}", self.address, path, api_key))
-//         .send()
-//         .await
-//         .map_err(|e| {
-//             NaApiError::UnknownError(format!(
-//                 "Failed to finish request with error: {e}"
-//             ))
-//         })?;
-//     let result_json = result.json::<Value>().await.map_err(|e| {
-//         NaApiError::UnknownError(format!(
-//             "Failed to finish request with error: {e}"
-//         ))
-//     })?;
-//     Ok(result_json)
-// }
-
-// /// Make a request for the client
-// async fn delete(&self, path: &str) -> Result<Value, NaApiError> {
-//     let mut api_key = self.api_key.clone();
-//     if path.contains("?") {
-//         api_key = "&key=".to_owned() + &self.api_key;
-//     } else {
-//         api_key = "?key=".to_owned() + &self.api_key;
-//     }
-//     // println!("{}{}{}", self.address, path, api_key);
-//     let result = self
-//         .http_client
-//         .get(format!("{}{}{}", self.address, path, api_key))
-//         .send()
-//         .await
-//         .map_err(|e| {
-//             NaApiError::UnknownError(format!(
-//                 "Failed to finish request with error: {e}"
-//             ))
-//         })?;
-//     let result_json = result.json::<Value>().await.map_err(|e| {
-//         NaApiError::UnknownError(format!(
-//             "Failed to finish request with error: {e}"
-//         ))
-//     })?;
-//     Ok(result_json)
-// }
-
-// // Define a module to hold the custom serialization/deserialization logic.
-// // This is kind of BS to have to do...
-// mod custom_datetime_format_seconds {
-//     use chrono::{NaiveDateTime, ParseResult};
-//     use serde::{self, Deserialize, Deserializer, Serializer};
-//
-//     const FORMAT: &str = "%Y-%m-%d %H:%M:%S";
-//
-//     // The signature for a `serialize_with` function must take the value being
-//     // serialized and a serializer.
-//     pub fn serialize<S>(date: &NaiveDateTime, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         let s = format!("{}", date.format(FORMAT));
-//         serializer.serialize_str(&s)
-//     }
-//
-//     // The signature for a `deserialize_with` function must take a deserializer.
-//     pub fn deserialize<'de, D>(deserializer: D) -> Result<NaiveDateTime, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         let s = String::deserialize(deserializer)?;
-//         NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)
-//     }
-// }
-//
-// // Define a module to hold the custom serialization/deserialization logic.
-// // This is kind of BS to have to do...
-// mod custom_datetime_format_microseconds {
-//     use chrono::{NaiveDateTime, ParseResult};
-//     use serde::{self, Deserialize, Deserializer, Serializer};
-//
-//     const FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
-//
-//     // The signature for a `serialize_with` function must take the value being
-//     // serialized and a serializer.
-//     pub fn serialize<S>(date: &NaiveDateTime, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         let s = format!("{}", date.format(FORMAT));
-//         serializer.serialize_str(&s)
-//     }
-//
-//     // The signature for a `deserialize_with` function must take a deserializer.
-//     pub fn deserialize<'de, D>(deserializer: D) -> Result<NaiveDateTime, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         let s = String::deserialize(deserializer)?;
-//         NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)
-//     }
-// }
-//

@@ -2,7 +2,6 @@
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
 use dotenvy::dotenv;
-use lazy_static::lazy_static;
 use serde::Deserialize;
 use std::env as std_env;
 
@@ -15,7 +14,7 @@ pub struct Settings {
 }
 
 impl Settings {
-    // manuall set api address
+    // manually set api address
     pub const API_ADDRESS: &str = "https://vapi2.netactuate.com/api/";
 
     pub fn new() -> Result<Settings, NaApiError> {
@@ -37,10 +36,10 @@ fn set_key() -> Result<String, NaApiError> {
             }
             Ok(key)
         }
-        Err(err) => {
+        Err(_) => {
             return Err(NaApiError::APIKeyInvalid(
                 "API_KEY not set in ENV".to_string(),
-            ))
+            ));
         }
     };
     Ok(apikey)?
