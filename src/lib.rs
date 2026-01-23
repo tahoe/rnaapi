@@ -47,6 +47,7 @@
 // Copyright (C) 2025 Dennis Durling
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
+use async_trait::async_trait;
 use errors::NaApiError;
 use reqwest::ClientBuilder;
 use reqwest_hickory_resolver::HickoryResolver;
@@ -61,6 +62,23 @@ pub struct NaClient {
     pub address: String,
     pub api_key: String,
     pub http_client: reqwest::Client,
+}
+
+pub enum EndPointGetArgs {
+    NoArgs,
+    OneInt(u32),
+    TwoInt(u32, u32),
+}
+
+#[async_trait]
+pub trait EndpointGet {
+    type Endpoint;
+    async fn get_one(
+        na_client: &NaClient, args: EndPointGetArgs,
+    ) -> Result<Self::Endpoint, NaApiError>;
+    async fn get_all(
+        na_client: &NaClient, args: EndPointGetArgs,
+    ) -> Result<Vec<Self::Endpoint>, NaApiError>;
 }
 
 impl NaClient {

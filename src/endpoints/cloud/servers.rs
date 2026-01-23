@@ -4,8 +4,9 @@
 #![allow(clippy::too_many_arguments)]
 use serde::{Deserialize, Serialize};
 
-use crate::NaClient;
 use crate::errors::NaApiError;
+use crate::{EndPointGetArgs, EndpointGet, NaClient};
+use async_trait::async_trait;
 
 //
 // Server struct
@@ -32,23 +33,40 @@ pub struct Server {
     pub nic2_mac: String,
 }
 
-impl Server {
-    pub async fn get_one(
-        na_client: &NaClient, mbpkgid: u32,
+#[async_trait]
+impl EndpointGet for Server {
+    type Endpoint = Server;
+    async fn get_one(
+        na_client: &NaClient, args: EndPointGetArgs,
     ) -> Result<Server, NaApiError> {
-        let data = na_client
-            .get_data(&format!("cloud/server?mbpkgid={mbpkgid}").to_owned())
-            .await?;
-        let server: Server = serde_json::from_value(data).unwrap();
-        Ok(server)
+        match args {
+            EndPointGetArgs::OneInt(id) => {
+                let data = na_client
+                    .get_data(&format!("cloud/server?mbpkgid={id}").to_owned())
+                    .await?;
+                let server: Server = serde_json::from_value(data).unwrap();
+                Ok(server)
+            }
+            _ => Err(NaApiError::UnknownError(
+                "Only one argument allowed".to_owned(),
+            )),
+        }
     }
 
-    pub async fn get_all(
-        na_client: &NaClient,
+    async fn get_all(
+        na_client: &NaClient, args: EndPointGetArgs,
     ) -> Result<Vec<Server>, NaApiError> {
-        let data = na_client.get_data("cloud/servers").await?;
-        let servers: Vec<Server> = serde_json::from_value(data).unwrap();
-        Ok(servers)
+        match args {
+            EndPointGetArgs::NoArgs => {
+                let data = na_client.get_data("cloud/servers").await?;
+                let servers: Vec<Server> =
+                    serde_json::from_value(data).unwrap();
+                Ok(servers)
+            }
+            _ => Err(NaApiError::UnknownError(
+                "Only one argument allowed".to_owned(),
+            )),
+        }
     }
 }
 

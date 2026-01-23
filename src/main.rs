@@ -30,6 +30,7 @@
 // under the GNU General Public License v3.0
 use anyhow::Result;
 use clap::Parser;
+use rnaapi::EndpointGet;
 use rnaapi::NaClient;
 use rnaapi::config::Settings;
 use rnaapi::endpoints;
@@ -65,7 +66,10 @@ async fn main() -> Result<()> {
         // submit jobs to the tokio async runtime
         // this automatically awaits so no need for .await
         let (srv, jobs, ipv4s, ipv6s, stat) = tokio::join!(
-            endpoints::Server::get_one(&na_client, mbpkgid),
+            endpoints::Server::get_one(
+                &na_client,
+                rnaapi::EndPointGetArgs::OneInt(mbpkgid)
+            ),
             endpoints::SrvJob::get_all(&na_client, mbpkgid),
             endpoints::IPv4::get_all(&na_client, mbpkgid),
             endpoints::IPv6::get_all(&na_client, mbpkgid),
@@ -130,7 +134,10 @@ async fn main() -> Result<()> {
         // submit jobs to the tokio async runtime
         // this automatically awaits so no need for .await
         let (srvrs, locs, pkgs, imgs, zones, ssh_keys, deets, invoices) = tokio::join!(
-            endpoints::Server::get_all(&na_client),
+            endpoints::Server::get_all(
+                &na_client,
+                rnaapi::EndPointGetArgs::NoArgs
+            ),
             endpoints::Location::get_all(&na_client),
             endpoints::Package::get_all(&na_client),
             endpoints::Image::get_all(&na_client),
