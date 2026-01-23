@@ -35,10 +35,12 @@ pub struct Invoices {
 }
 
 // Get Details
-impl NaClient {
+impl Invoices {
     /// Get all invoices
-    pub async fn get_acct_invoices(&self) -> Result<Vec<Invoices>, NaApiError> {
-        let data = self.get_data("account/invoices").await?;
+    pub async fn get_all(
+        na_client: &NaClient,
+    ) -> Result<Vec<Invoices>, NaApiError> {
+        let data = na_client.get_data("account/invoices").await?;
         // println!("Data: {data}");
         let voices: Vec<Invoices> = serde_json::from_value(data).unwrap();
         Ok(voices)

@@ -32,6 +32,7 @@ use anyhow::Result;
 use clap::Parser;
 use rnaapi::NaClient;
 use rnaapi::config::Settings;
+use rnaapi::endpoints;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -64,11 +65,11 @@ async fn main() -> Result<()> {
         // submit jobs to the tokio async runtime
         // this automatically awaits so no need for .await
         let (srv, jobs, ipv4s, ipv6s, stat) = tokio::join!(
-            na_client.get_server(mbpkgid),
-            na_client.get_jobs(mbpkgid),
-            na_client.get_ipv4(mbpkgid),
-            na_client.get_ipv6(mbpkgid),
-            na_client.get_status(mbpkgid),
+            endpoints::Server::get_one(&na_client, mbpkgid),
+            endpoints::SrvJob::get_all(&na_client, mbpkgid),
+            endpoints::IPv4::get_all(&na_client, mbpkgid),
+            endpoints::IPv6::get_all(&na_client, mbpkgid),
+            endpoints::SrvStatus::get_all(&na_client, mbpkgid),
         );
 
         // print basic server info
@@ -111,7 +112,7 @@ async fn main() -> Result<()> {
     } else if zoneid > 0 {
         println!();
         // // print out the zone name
-        let zone = na_client.get_zone(zoneid).await?;
+        let zone = endpoints::Zone::get_one(&na_client, zoneid).await?;
         println!("Zone: {}", zone.name);
 
         // print out the SOA for the zone
@@ -129,14 +130,14 @@ async fn main() -> Result<()> {
         // submit jobs to the tokio async runtime
         // this automatically awaits so no need for .await
         let (srvrs, locs, pkgs, imgs, zones, ssh_keys, deets, invoices) = tokio::join!(
-            na_client.get_servers(),
-            na_client.get_locations(),
-            na_client.get_packages(),
-            na_client.get_images(),
-            na_client.get_zones(),
-            na_client.get_ssh_keys(),
-            na_client.get_acct_details(),
-            na_client.get_acct_invoices()
+            endpoints::Server::get_all(&na_client),
+            endpoints::Location::get_all(&na_client),
+            endpoints::Package::get_all(&na_client),
+            endpoints::Image::get_all(&na_client),
+            endpoints::Zone::get_all(&na_client),
+            endpoints::SSHKeys::get_all(&na_client),
+            endpoints::Details::get_all(&na_client),
+            endpoints::Invoices::get_all(&na_client),
         );
 
         for srvr in srvrs.unwrap() {

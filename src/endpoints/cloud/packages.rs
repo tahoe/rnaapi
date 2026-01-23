@@ -4,8 +4,8 @@
 #![allow(clippy::too_many_arguments)]
 use serde::{Deserialize, Serialize};
 
-use crate::errors::NaApiError;
 use crate::NaClient;
+use crate::errors::NaApiError;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Package {
@@ -32,10 +32,12 @@ pub struct Package {
 //
 // Packages
 //
-impl NaClient {
+impl Package {
     /// Get a list of available packages
-    pub async fn get_packages(&self) -> Result<Vec<Package>, NaApiError> {
-        let data = self.get_data("cloud/packages").await?;
+    pub async fn get_all(
+        na_client: &NaClient,
+    ) -> Result<Vec<Package>, NaApiError> {
+        let data = na_client.get_data("cloud/packages").await?;
         let pkg_data: Vec<Package> = serde_json::from_value(data).unwrap();
         Ok(pkg_data)
     }

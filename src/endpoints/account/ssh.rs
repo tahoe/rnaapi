@@ -27,16 +27,20 @@ pub struct SSHKeys {
 }
 
 // Get Details
-impl NaClient {
+impl SSHKeys {
     /// Get an account's SSH keys
-    pub async fn get_ssh_keys(&self) -> Result<Vec<SSHKeys>, NaApiError> {
-        let data = self.get_data("account/ssh_keys").await?;
+    pub async fn get_all(
+        na_client: &NaClient,
+    ) -> Result<Vec<SSHKeys>, NaApiError> {
+        let data = na_client.get_data("account/ssh_keys").await?;
         let ssh_keys: Vec<SSHKeys> = serde_json::from_value(data).unwrap();
         Ok(ssh_keys)
     }
 
-    pub async fn get_ssh_key(&self, keyid: u32) -> Result<SSHKeys, NaApiError> {
-        let data = self
+    pub async fn get_one(
+        na_client: &NaClient, keyid: u32,
+    ) -> Result<SSHKeys, NaApiError> {
+        let data = na_client
             .get_data(&format!("account/ssh_key/{keyid}").to_owned())
             .await?;
         let ssh_key: SSHKeys = serde_json::from_value(data).unwrap();

@@ -51,11 +51,13 @@ pub struct SOA {
 }
 
 // Get zone/domain info
-impl NaClient {
+impl Zone {
     /// Get a single DNS Zone (domain)
     /// Requires a Zone ID
-    pub async fn get_zone(&self, zoneid: u32) -> Result<Zone, NaApiError> {
-        let data = self
+    pub async fn get_one(
+        na_client: &NaClient, zoneid: u32,
+    ) -> Result<Zone, NaApiError> {
+        let data = na_client
             .get_data(&format!("dns/zone/{zoneid}").to_owned())
             .await?;
         let zone: Zone = serde_json::from_value(data).unwrap();
@@ -63,8 +65,10 @@ impl NaClient {
     }
 
     /// Get all my DNS Zones
-    pub async fn get_zones(&self) -> Result<Vec<Zone>, NaApiError> {
-        let data = self.get_data("dns/zones?type=NATIVE").await?;
+    pub async fn get_all(
+        na_client: &NaClient,
+    ) -> Result<Vec<Zone>, NaApiError> {
+        let data = na_client.get_data("dns/zones?type=NATIVE").await?;
         let zones: Vec<Zone> = serde_json::from_value(data).unwrap();
         Ok(zones)
     }
@@ -87,13 +91,13 @@ pub struct Record {
 }
 
 // Get zone/domain info
-impl NaClient {
+impl Record {
     /// Get a single DNS record in a zone
     /// Requires a Record ID
-    pub async fn get_record(
-        &self, recordid: u32,
+    pub async fn get_one(
+        na_client: &NaClient, recordid: u32,
     ) -> Result<Record, NaApiError> {
-        let data = self
+        let data = na_client
             .get_data(&format!("dns/record/{recordid}").to_owned())
             .await?;
         let record: Record = serde_json::from_value(data).unwrap();
@@ -102,10 +106,10 @@ impl NaClient {
 
     /// Get all my DNS records for a zone
     /// Requires a Zone ID
-    pub async fn get_records(
-        &self, zoneid: u32,
+    pub async fn get_all(
+        na_client: &NaClient, zoneid: u32,
     ) -> Result<Vec<Record>, NaApiError> {
-        let data = self
+        let data = na_client
             .get_data(&format!("dns/records/{zoneid}").to_owned())
             .await?;
         let records: Vec<Record> = serde_json::from_value(data).unwrap();

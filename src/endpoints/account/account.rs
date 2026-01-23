@@ -54,10 +54,10 @@ pub struct Details {
 }
 
 // Get Details
-impl NaClient {
+impl Details {
     /// Get your account details
-    pub async fn get_acct_details(&self) -> Result<Details, NaApiError> {
-        let data = self.get_data("account/details").await?;
+    pub async fn get_all(na_client: &NaClient) -> Result<Details, NaApiError> {
+        let data = na_client.get_data("account/details").await?;
         let deets: Details = serde_json::from_value(data).unwrap();
         Ok(deets)
     }

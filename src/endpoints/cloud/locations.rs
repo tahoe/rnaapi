@@ -4,8 +4,8 @@
 #![allow(clippy::too_many_arguments)]
 use serde::{Deserialize, Serialize};
 
-use crate::errors::NaApiError;
 use crate::NaClient;
+use crate::errors::NaApiError;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -23,11 +23,14 @@ pub struct Location {
 //
 // Locations
 //
-impl NaClient {
+impl Location {
     /// Get a list of available locations
-    pub async fn get_locations(&self) -> Result<Vec<Location>, NaApiError> {
-        let data = self.get_data("cloud/locations").await?;
-        let location_list: Vec<Location> = serde_json::from_value(data).unwrap();
+    pub async fn get_all(
+        na_client: &NaClient,
+    ) -> Result<Vec<Location>, NaApiError> {
+        let data = na_client.get_data("cloud/locations").await?;
+        let location_list: Vec<Location> =
+            serde_json::from_value(data).unwrap();
         Ok(location_list)
     }
 }
