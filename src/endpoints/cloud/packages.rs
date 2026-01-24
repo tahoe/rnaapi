@@ -4,8 +4,9 @@
 #![allow(clippy::too_many_arguments)]
 use serde::{Deserialize, Serialize};
 
-use crate::NaClient;
 use crate::errors::NaApiError;
+use crate::{EndpointGet, EndpointGetArgs, NaClient};
+use async_trait::async_trait;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Package {
@@ -32,14 +33,24 @@ pub struct Package {
 //
 // Packages
 //
-impl Package {
+#[async_trait]
+impl EndpointGet for Package {
+    type Endpoint = Package;
     /// Get a list of available packages
-    pub async fn get_all(
-        na_client: &NaClient,
+    async fn get_all(
+        na_client: &NaClient, args: EndpointGetArgs,
     ) -> Result<Vec<Package>, NaApiError> {
-        let data = na_client.get_data("cloud/packages").await?;
-        let pkg_data: Vec<Package> = serde_json::from_value(data).unwrap();
-        Ok(pkg_data)
+        match args {
+            EndpointGetArgs::NoArgs => {
+                let data = na_client.get_data("cloud/packages").await?;
+                let pkg_data: Vec<Package> =
+                    serde_json::from_value(data).unwrap();
+                Ok(pkg_data)
+            }
+            _ => {
+                Err(NaApiError::UnknownError("No arguments allowed".to_owned()))
+            }
+        }
     }
 }
 /*

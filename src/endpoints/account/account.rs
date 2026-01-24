@@ -5,7 +5,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::NaApiError;
-use crate::NaClient;
+use crate::{EndpointGet, EndpointGetArgs, NaClient};
+use async_trait::async_trait;
 
 ///
 /// Account Details #[derive(Debug)]
@@ -54,11 +55,22 @@ pub struct Details {
 }
 
 // Get Details
-impl Details {
+#[async_trait]
+impl EndpointGet for Details {
+    type Endpoint = Details;
     /// Get your account details
-    pub async fn get_all(na_client: &NaClient) -> Result<Details, NaApiError> {
-        let data = na_client.get_data("account/details").await?;
-        let deets: Details = serde_json::from_value(data).unwrap();
-        Ok(deets)
+    async fn get_one(
+        na_client: &NaClient, args: EndpointGetArgs,
+    ) -> Result<Details, NaApiError> {
+        match args {
+            EndpointGetArgs::NoArgs => {
+                let data = na_client.get_data("account/details").await?;
+                let deets: Details = serde_json::from_value(data).unwrap();
+                Ok(deets)
+            }
+            _ => {
+                Err(NaApiError::UnknownError("No arguments allowed".to_owned()))
+            }
+        }
     }
 }

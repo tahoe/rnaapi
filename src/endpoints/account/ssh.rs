@@ -5,7 +5,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::NaApiError;
-use crate::NaClient;
+use crate::{EndpointGet, EndpointGetArgs, NaClient};
+use async_trait::async_trait;
 
 ///
 /// Account Details #[derive(Debug)]
@@ -27,23 +28,39 @@ pub struct SSHKeys {
 }
 
 // Get Details
-impl SSHKeys {
-    /// Get an account's SSH keys
-    pub async fn get_all(
-        na_client: &NaClient,
-    ) -> Result<Vec<SSHKeys>, NaApiError> {
-        let data = na_client.get_data("account/ssh_keys").await?;
-        let ssh_keys: Vec<SSHKeys> = serde_json::from_value(data).unwrap();
-        Ok(ssh_keys)
-    }
-
-    pub async fn get_one(
-        na_client: &NaClient, keyid: u32,
+#[async_trait]
+impl EndpointGet for SSHKeys {
+    type Endpoint = SSHKeys;
+    async fn get_one(
+        na_client: &NaClient, args: EndpointGetArgs,
     ) -> Result<SSHKeys, NaApiError> {
-        let data = na_client
-            .get_data(&format!("account/ssh_key/{keyid}").to_owned())
-            .await?;
-        let ssh_key: SSHKeys = serde_json::from_value(data).unwrap();
-        Ok(ssh_key)
+        match args {
+            EndpointGetArgs::OneInt(keyid) => {
+                let data = na_client
+                    .get_data(&format!("account/ssh_key/{keyid}").to_owned())
+                    .await?;
+                let ssh_key: SSHKeys = serde_json::from_value(data).unwrap();
+                Ok(ssh_key)
+            }
+            _ => Err(NaApiError::UnknownError(
+                "Only one argument allowed".to_owned(),
+            )),
+        }
+    }
+    /// Get an account's SSH keys
+    async fn get_all(
+        na_client: &NaClient, args: EndpointGetArgs,
+    ) -> Result<Vec<SSHKeys>, NaApiError> {
+        match args {
+            EndpointGetArgs::NoArgs => {
+                let data = na_client.get_data("account/ssh_keys").await?;
+                let ssh_keys: Vec<SSHKeys> =
+                    serde_json::from_value(data).unwrap();
+                Ok(ssh_keys)
+            }
+            _ => {
+                Err(NaApiError::UnknownError("No arguments allowed".to_owned()))
+            }
+        }
     }
 }

@@ -30,10 +30,10 @@
 // under the GNU General Public License v3.0
 use anyhow::Result;
 use clap::Parser;
-use rnaapi::EndpointGet;
 use rnaapi::NaClient;
 use rnaapi::config::Settings;
 use rnaapi::endpoints;
+use rnaapi::{EndpointGet, EndpointGetArgs};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -68,12 +68,24 @@ async fn main() -> Result<()> {
         let (srv, jobs, ipv4s, ipv6s, stat) = tokio::join!(
             endpoints::Server::get_one(
                 &na_client,
-                rnaapi::EndPointGetArgs::OneInt(mbpkgid)
+                EndpointGetArgs::OneInt(mbpkgid)
             ),
-            endpoints::SrvJob::get_all(&na_client, mbpkgid),
-            endpoints::IPv4::get_all(&na_client, mbpkgid),
-            endpoints::IPv6::get_all(&na_client, mbpkgid),
-            endpoints::SrvStatus::get_all(&na_client, mbpkgid),
+            endpoints::SrvJob::get_all(
+                &na_client,
+                EndpointGetArgs::OneInt(mbpkgid)
+            ),
+            endpoints::IPv4::get_all(
+                &na_client,
+                EndpointGetArgs::OneInt(mbpkgid)
+            ),
+            endpoints::IPv6::get_all(
+                &na_client,
+                EndpointGetArgs::OneInt(mbpkgid)
+            ),
+            endpoints::SrvStatus::get_one(
+                &na_client,
+                EndpointGetArgs::OneInt(mbpkgid)
+            ),
         );
 
         // print basic server info
@@ -116,7 +128,11 @@ async fn main() -> Result<()> {
     } else if zoneid > 0 {
         println!();
         // // print out the zone name
-        let zone = endpoints::Zone::get_one(&na_client, zoneid).await?;
+        let zone = endpoints::Zone::get_one(
+            &na_client,
+            EndpointGetArgs::OneInt(zoneid),
+        )
+        .await?;
         println!("Zone: {}", zone.name);
 
         // print out the SOA for the zone
@@ -134,17 +150,14 @@ async fn main() -> Result<()> {
         // submit jobs to the tokio async runtime
         // this automatically awaits so no need for .await
         let (srvrs, locs, pkgs, imgs, zones, ssh_keys, deets, invoices) = tokio::join!(
-            endpoints::Server::get_all(
-                &na_client,
-                rnaapi::EndPointGetArgs::NoArgs
-            ),
-            endpoints::Location::get_all(&na_client),
-            endpoints::Package::get_all(&na_client),
-            endpoints::Image::get_all(&na_client),
-            endpoints::Zone::get_all(&na_client),
-            endpoints::SSHKeys::get_all(&na_client),
-            endpoints::Details::get_all(&na_client),
-            endpoints::Invoices::get_all(&na_client),
+            endpoints::Server::get_all(&na_client, EndpointGetArgs::NoArgs),
+            endpoints::Location::get_all(&na_client, EndpointGetArgs::NoArgs),
+            endpoints::Package::get_all(&na_client, EndpointGetArgs::NoArgs),
+            endpoints::Image::get_all(&na_client, EndpointGetArgs::NoArgs),
+            endpoints::Zone::get_all(&na_client, EndpointGetArgs::NoArgs),
+            endpoints::SSHKeys::get_all(&na_client, EndpointGetArgs::NoArgs),
+            endpoints::Details::get_one(&na_client, EndpointGetArgs::NoArgs),
+            endpoints::Invoices::get_all(&na_client, EndpointGetArgs::NoArgs),
         );
 
         for srvr in srvrs.unwrap() {

@@ -3,8 +3,9 @@
 // under the GNU General Public License v3.0
 use serde::{Deserialize, Serialize};
 
-use crate::NaClient;
 use crate::errors::NaApiError;
+use crate::{EndpointGet, EndpointGetArgs, NaClient};
+use async_trait::async_trait;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -27,34 +28,23 @@ pub struct Image {
 //
 // Images
 //
-impl Image {
+#[async_trait]
+impl EndpointGet for Image {
+    type Endpoint = Image;
     /// Get a list of available OS images
-    pub async fn get_all(
-        na_client: &NaClient,
+    async fn get_all(
+        na_client: &NaClient, args: EndpointGetArgs,
     ) -> Result<Vec<Image>, NaApiError> {
-        let data = na_client.get_data("cloud/images").await?;
-        let image_list: Vec<Image> = serde_json::from_value(data).unwrap();
-        Ok(image_list)
+        match args {
+            EndpointGetArgs::NoArgs => {
+                let data = na_client.get_data("cloud/images").await?;
+                let image_list: Vec<Image> =
+                    serde_json::from_value(data).unwrap();
+                Ok(image_list)
+            }
+            _ => {
+                Err(NaApiError::UnknownError("No arguments allowed".to_owned()))
+            }
+        }
     }
 }
-/*
-// OS is a struct for storing the attributes of an OS
-type OS struct {
-    ID      int    `json:"id"`
-    Os      string `json:"os"`
-    Type    string `json:"type"`
-    Subtype string `json:"subtype"`
-    Size    string `json:"size"`
-    Bits    string `json:"bits"`
-    Tech    string `json:"tech"`
-}
-
-// GetOSs returns a list of OS objects from the api
-func (c *Client) GetOSs() ([]OS, error) {
-    var osList []OS
-    if err := c.get("cloud/images", &osList); err != nil {
-        return nil, err
-    }
-    return osList, nil
-}
-*/

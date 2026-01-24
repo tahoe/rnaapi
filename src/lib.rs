@@ -11,7 +11,7 @@
 //!
 //! ## Import the library
 //!
-//! ```rust
+//! ```bash
 //! cargo add rnaapi
 //! ```
 //!
@@ -26,20 +26,25 @@
 //! ## Import the config that uses the environment
 //!
 //! ```rust
-//! use rnaapi::config::Settings;
+//! // Simplest example
+//! use anyhow::Result;
+//! use clap::Parser;
 //! use rnaapi::NaClient;
-//! // whatever other libraries you want to use like serde_json, serde::Serialize...
-//! ```
+//! use rnaapi::config::Settings;
+//! use rnaapi::endpoints;
+//! use rnaapi::{EndpointGet, EndpointGetArgs};
+
+//! #[tokio::main]
+//! async fn main() -> Result<()> {
 //!
-//! ## Simplest example
-//!
-//! ```rust
-//! // with above imports
-//! let settings = Settings.new();
-//! let client = NaClient::new(settings.api_key, settings.api_url).await;
-//! let servers = client.get_servers().await;
-//! for server in servers {
-//!     println!("fqdn: {}, mbpkgid: {}", server.fqdn, server.mbpkgid);
+//!     // with above imports
+//!     let settings = Settings::new();
+//!     let client = NaClient::new(settings.api_key, settings.api_url).await;
+//!     let servers = client.get_servers().await;
+//!     for server in servers {
+//!         println!("fqdn: {}, mbpkgid: {}", server.fqdn, server.mbpkgid);
+//!     }
+//!     Ok(())
 //! }
 //! ```
 //!
@@ -64,7 +69,7 @@ pub struct NaClient {
     pub http_client: reqwest::Client,
 }
 
-pub enum EndPointGetArgs {
+pub enum EndpointGetArgs {
     NoArgs,
     OneInt(u32),
     TwoInt(u32, u32),
@@ -73,12 +78,24 @@ pub enum EndPointGetArgs {
 #[async_trait]
 pub trait EndpointGet {
     type Endpoint;
+
+    #[allow(unused)]
     async fn get_one(
-        na_client: &NaClient, args: EndPointGetArgs,
-    ) -> Result<Self::Endpoint, NaApiError>;
+        na_client: &NaClient, args: EndpointGetArgs,
+    ) -> Result<Self::Endpoint, NaApiError> {
+        Err(NaApiError::UnknownError(
+            "Get All not implemented here".to_string(),
+        ))
+    }
+
+    #[allow(unused)]
     async fn get_all(
-        na_client: &NaClient, args: EndPointGetArgs,
-    ) -> Result<Vec<Self::Endpoint>, NaApiError>;
+        na_client: &NaClient, args: EndpointGetArgs,
+    ) -> Result<Vec<Self::Endpoint>, NaApiError> {
+        Err(NaApiError::UnknownError(
+            "Get All not implemented here".to_string(),
+        ))
+    }
 }
 
 impl NaClient {

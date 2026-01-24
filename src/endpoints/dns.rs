@@ -4,8 +4,9 @@
 #![allow(clippy::too_many_arguments)]
 use serde::{Deserialize, Serialize};
 
-use crate::NaClient;
 use crate::errors::NaApiError;
+use crate::{EndpointGet, EndpointGetArgs, NaClient};
+use async_trait::async_trait;
 
 //
 // Zone ttl key type since it changes between
@@ -51,26 +52,42 @@ pub struct SOA {
 }
 
 // Get zone/domain info
-impl Zone {
+#[async_trait]
+impl EndpointGet for Zone {
+    type Endpoint = Zone;
     /// Get a single DNS Zone (domain)
     /// Requires a Zone ID
-    pub async fn get_one(
-        na_client: &NaClient, zoneid: u32,
+    async fn get_one(
+        na_client: &NaClient, args: EndpointGetArgs,
     ) -> Result<Zone, NaApiError> {
-        let data = na_client
-            .get_data(&format!("dns/zone/{zoneid}").to_owned())
-            .await?;
-        let zone: Zone = serde_json::from_value(data).unwrap();
-        Ok(zone)
+        match args {
+            EndpointGetArgs::OneInt(zoneid) => {
+                let data = na_client
+                    .get_data(&format!("dns/zone/{zoneid}").to_owned())
+                    .await?;
+                let zone: Zone = serde_json::from_value(data).unwrap();
+                Ok(zone)
+            }
+            _ => Err(NaApiError::UnknownError(
+                "Only one argument allowed".to_owned(),
+            )),
+        }
     }
 
     /// Get all my DNS Zones
-    pub async fn get_all(
-        na_client: &NaClient,
+    async fn get_all(
+        na_client: &NaClient, args: EndpointGetArgs,
     ) -> Result<Vec<Zone>, NaApiError> {
-        let data = na_client.get_data("dns/zones?type=NATIVE").await?;
-        let zones: Vec<Zone> = serde_json::from_value(data).unwrap();
-        Ok(zones)
+        match args {
+            EndpointGetArgs::NoArgs => {
+                let data = na_client.get_data("dns/zones?type=NATIVE").await?;
+                let zones: Vec<Zone> = serde_json::from_value(data).unwrap();
+                Ok(zones)
+            }
+            _ => {
+                Err(NaApiError::UnknownError("No arguments allowed".to_owned()))
+            }
+        }
     }
 }
 
@@ -91,28 +108,45 @@ pub struct Record {
 }
 
 // Get zone/domain info
-impl Record {
+#[async_trait]
+impl EndpointGet for Record {
+    type Endpoint = Record;
     /// Get a single DNS record in a zone
     /// Requires a Record ID
-    pub async fn get_one(
-        na_client: &NaClient, recordid: u32,
+    async fn get_one(
+        na_client: &NaClient, args: EndpointGetArgs,
     ) -> Result<Record, NaApiError> {
-        let data = na_client
-            .get_data(&format!("dns/record/{recordid}").to_owned())
-            .await?;
-        let record: Record = serde_json::from_value(data).unwrap();
-        Ok(record)
+        match args {
+            EndpointGetArgs::OneInt(recordid) => {
+                let data = na_client
+                    .get_data(&format!("dns/record/{recordid}").to_owned())
+                    .await?;
+                let record: Record = serde_json::from_value(data).unwrap();
+                Ok(record)
+            }
+            _ => Err(NaApiError::UnknownError(
+                "Only one argument allowed".to_owned(),
+            )),
+        }
     }
 
     /// Get all my DNS records for a zone
     /// Requires a Zone ID
-    pub async fn get_all(
-        na_client: &NaClient, zoneid: u32,
+    async fn get_all(
+        na_client: &NaClient, args: EndpointGetArgs,
     ) -> Result<Vec<Record>, NaApiError> {
-        let data = na_client
-            .get_data(&format!("dns/records/{zoneid}").to_owned())
-            .await?;
-        let records: Vec<Record> = serde_json::from_value(data).unwrap();
-        Ok(records)
+        match args {
+            EndpointGetArgs::OneInt(zoneid) => {
+                let data = na_client
+                    .get_data(&format!("dns/records/{zoneid}").to_owned())
+                    .await?;
+                let records: Vec<Record> =
+                    serde_json::from_value(data).unwrap();
+                Ok(records)
+            }
+            _ => Err(NaApiError::UnknownError(
+                "Only one argument allowed".to_owned(),
+            )),
+        }
     }
 }
