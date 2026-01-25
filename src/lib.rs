@@ -58,21 +58,15 @@ use reqwest::ClientBuilder;
 use reqwest_hickory_resolver::HickoryResolver;
 use serde_json::Value;
 use std::sync::Arc;
-
 pub mod config;
 pub mod endpoints;
 pub mod errors;
+pub use rnahelpers::EndpointGetArgs;
 
 pub struct NaClient {
     pub address: String,
     pub api_key: String,
     pub http_client: reqwest::Client,
-}
-
-pub enum EndpointGetArgs {
-    NoArgs,
-    OneInt(u32),
-    TwoInt(u32, u32),
 }
 
 #[async_trait]

@@ -1390,11 +1390,16 @@ dependencies = [
  "lazy_static",
  "reqwest",
  "reqwest-hickory-resolver",
+ "rnahelpers",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
 ]
+
+[[package]]
+name = "rnahelpers"
+version = "0.1.0"
 
 [[package]]
 name = "rustc-demangle"
