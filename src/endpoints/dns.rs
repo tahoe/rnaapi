@@ -5,7 +5,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::errors::NaApiError;
-use crate::{EndpointGet, EndpointGetArgs, NaClient};
+use crate::{
+    EndpointGet, EndpointGetAll, EndpointGetArgs, EndpointGetOne, NaClient,
+};
 use async_trait::async_trait;
 
 //
@@ -22,7 +24,15 @@ pub enum TtlType {
 //
 // Just Zone struct (from ID)
 //
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGet)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    EndpointGetOne,
+    EndpointGetAll,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct Zone {
     pub id: u32,

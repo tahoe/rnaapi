@@ -61,7 +61,7 @@ use std::sync::Arc;
 pub mod config;
 pub mod endpoints;
 pub mod errors;
-pub use rnaapi_derive::EndpointGet;
+pub use rnaapi_derive::{EndpointGetAll, EndpointGetOne};
 
 pub struct NaClient {
     pub address: String,
@@ -73,6 +73,32 @@ pub enum EndpointGetArgs {
     NoArgs,
     OneInt(u32),
     TwoInt(u32, u32),
+}
+
+#[async_trait]
+pub trait EndpointGetOne {
+    type Endpoint;
+
+    async fn get_one(
+        na_client: &NaClient, args: EndpointGetArgs,
+    ) -> Result<Self::Endpoint, NaApiError> {
+        Err(NaApiError::UnknownError(
+            "Get All not implemented here".to_string(),
+        ))
+    }
+}
+
+#[async_trait]
+pub trait EndpointGetAll {
+    type Endpoint;
+
+    async fn get_all(
+        na_client: &NaClient, args: EndpointGetArgs,
+    ) -> Result<Vec<Self::Endpoint>, NaApiError> {
+        Err(NaApiError::UnknownError(
+            "Get All not implemented here".to_string(),
+        ))
+    }
 }
 
 #[async_trait]
