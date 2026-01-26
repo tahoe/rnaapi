@@ -22,7 +22,7 @@ pub enum TtlType {
 //
 // Just Zone struct (from ID)
 //
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGet)]
 #[serde(rename_all = "snake_case")]
 pub struct Zone {
     pub id: u32,
@@ -51,45 +51,45 @@ pub struct SOA {
     pub default_ttl: String,
 }
 
-// Get zone/domain info
-#[async_trait]
-impl EndpointGet for Zone {
-    type Endpoint = Zone;
-    /// Get a single DNS Zone (domain)
-    /// Requires a Zone ID
-    async fn get_one(
-        na_client: &NaClient, args: EndpointGetArgs,
-    ) -> Result<Zone, NaApiError> {
-        match args {
-            EndpointGetArgs::OneInt(zoneid) => {
-                let data = na_client
-                    .get_data(&format!("dns/zone/{zoneid}").to_owned())
-                    .await?;
-                let zone: Zone = serde_json::from_value(data).unwrap();
-                Ok(zone)
-            }
-            _ => Err(NaApiError::UnknownError(
-                "Only one argument allowed".to_owned(),
-            )),
-        }
-    }
-
-    /// Get all my DNS Zones
-    async fn get_all(
-        na_client: &NaClient, args: EndpointGetArgs,
-    ) -> Result<Vec<Zone>, NaApiError> {
-        match args {
-            EndpointGetArgs::NoArgs => {
-                let data = na_client.get_data("dns/zones?type=NATIVE").await?;
-                let zones: Vec<Zone> = serde_json::from_value(data).unwrap();
-                Ok(zones)
-            }
-            _ => {
-                Err(NaApiError::UnknownError("No arguments allowed".to_owned()))
-            }
-        }
-    }
-}
+// // Get zone/domain info
+// #[async_trait]
+// impl EndpointGet for Zone {
+//     type Endpoint = Zone;
+//     /// Get a single DNS Zone (domain)
+//     /// Requires a Zone ID
+//     async fn get_one(
+//         na_client: &NaClient, args: EndpointGetArgs,
+//     ) -> Result<Zone, NaApiError> {
+//         match args {
+//             EndpointGetArgs::OneInt(zoneid) => {
+//                 let data = na_client
+//                     .get_data(&format!("dns/zone/{zoneid}").to_owned())
+//                     .await?;
+//                 let zone: Zone = serde_json::from_value(data).unwrap();
+//                 Ok(zone)
+//             }
+//             _ => Err(NaApiError::UnknownError(
+//                 "Only one argument allowed".to_owned(),
+//             )),
+//         }
+//     }
+//
+//     /// Get all my DNS Zones
+//     async fn get_all(
+//         na_client: &NaClient, args: EndpointGetArgs,
+//     ) -> Result<Vec<Zone>, NaApiError> {
+//         match args {
+//             EndpointGetArgs::NoArgs => {
+//                 let data = na_client.get_data("dns/zones?type=NATIVE").await?;
+//                 let zones: Vec<Zone> = serde_json::from_value(data).unwrap();
+//                 Ok(zones)
+//             }
+//             _ => {
+//                 Err(NaApiError::UnknownError("No arguments allowed".to_owned()))
+//             }
+//         }
+//     }
+// }
 
 //
 // Define an Record

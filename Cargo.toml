@@ -6,9 +6,9 @@ description = "NetActuate API client library"
 license = "GPL-3.0-only"
 
 [dependencies]
-rnahelpers = { path = "./rnahelpers"}
+rnaapi_derive = { path = "rnaapi_derive"}
 hickory-resolver = "0.25.2"
-reqwest = { version = "0.12.23", features = ["blocking", "json"]}
+reqwest = { version = "0.12.28", features = ["blocking", "json"]}
 reqwest-hickory-resolver = "0.2.0"
 clap = { version = "4.5.49", features = ["derive"] }
 crossterm = "0.29.0"
