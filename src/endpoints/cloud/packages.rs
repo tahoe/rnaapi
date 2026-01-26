@@ -5,10 +5,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::errors::NaApiError;
-use crate::{EndpointGet, EndpointGetArgs, NaClient};
+use crate::{EndpointGetAll, EndpointGetArgs, NaClient};
 use async_trait::async_trait;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
+#[getall(path = "cloud/packages", args = 0)]
 pub struct Package {
     pub mbpkgid: u32,
     pub package_status: String,
@@ -29,62 +30,3 @@ pub struct Package {
     pub os: String,
     pub is_building: u32,
 }
-
-//
-// Packages
-//
-#[async_trait]
-impl EndpointGet for Package {
-    type Endpoint = Package;
-    /// Get a list of available packages
-    async fn get_all(
-        na_client: &NaClient, args: EndpointGetArgs,
-    ) -> Result<Vec<Package>, NaApiError> {
-        match args {
-            EndpointGetArgs::NoArgs => {
-                let data = na_client.get_data("cloud/packages").await?;
-                let pkg_data: Vec<Package> =
-                    serde_json::from_value(data).unwrap();
-                Ok(pkg_data)
-            }
-            _ => {
-                Err(NaApiError::UnknownError("No arguments allowed".to_owned()))
-            }
-        }
-    }
-}
-/*
-
-import "strconv"
-
-// Package struct stores the purchaced package values
-type Package struct {
-    ID        int    `json:"mbpkgid,string"`
-    Status    string `json:"package_status"`
-    Locked    string `json:"locked"`
-    PlanName  string `json:"name"`
-    Installed int    `json:"installed,string"`
-}
-
-// GetPackages external method on Client that returns a
-// list of Package object from the API
-func (c *Client) GetPackages() ([]Package, error) {
-
-    var packageList []Package
-
-    if err := c.get("cloud/packages", &packageList); err != nil {
-        return nil, err
-    }
-
-    return packageList, nil
-}
-
-// GetPackage external method on Client that takes an id (int) as it's sole
-// argument and returns a single Package object
-func (c *Client) GetPackage(id int) (pkg Package, err error) {
-    if err := c.get("/cloud/package/"+strconv.Itoa(id), &pkg); err != nil {
-        return Package{Installed: 0}, err
-    }
-    return pkg, nil
-}
-*/

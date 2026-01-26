@@ -79,6 +79,7 @@ pub enum EndpointGetArgs {
 pub trait EndpointGetOne {
     type Endpoint;
 
+    #[allow(unused)]
     async fn get_one(
         na_client: &NaClient, args: EndpointGetArgs,
     ) -> Result<Self::Endpoint, NaApiError> {
@@ -91,28 +92,6 @@ pub trait EndpointGetOne {
 #[async_trait]
 pub trait EndpointGetAll {
     type Endpoint;
-
-    async fn get_all(
-        na_client: &NaClient, args: EndpointGetArgs,
-    ) -> Result<Vec<Self::Endpoint>, NaApiError> {
-        Err(NaApiError::UnknownError(
-            "Get All not implemented here".to_string(),
-        ))
-    }
-}
-
-#[async_trait]
-pub trait EndpointGet {
-    type Endpoint;
-
-    #[allow(unused)]
-    async fn get_one(
-        na_client: &NaClient, args: EndpointGetArgs,
-    ) -> Result<Self::Endpoint, NaApiError> {
-        Err(NaApiError::UnknownError(
-            "Get All not implemented here".to_string(),
-        ))
-    }
 
     #[allow(unused)]
     async fn get_all(

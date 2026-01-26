@@ -5,14 +5,15 @@
 use serde::{Deserialize, Serialize};
 
 use crate::NaApiError;
-use crate::{EndpointGet, EndpointGetArgs, NaClient};
+use crate::{EndpointGetArgs, EndpointGetOne, NaClient};
 use async_trait::async_trait;
 
 ///
 /// Account Details #[derive(Debug)]
 ///
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
 #[serde(rename_all = "snake_case")]
+#[getone(path = "account/details", args = 0)]
 pub struct Details {
     pub result: String,
     pub userid: String,
@@ -52,25 +53,4 @@ pub struct Details {
     #[serde(rename = "allowSingleSignOn")]
     pub allowsinglesignon: String,
     pub lastlogin: String,
-}
-
-// Get Details
-#[async_trait]
-impl EndpointGet for Details {
-    type Endpoint = Details;
-    /// Get your account details
-    async fn get_one(
-        na_client: &NaClient, args: EndpointGetArgs,
-    ) -> Result<Details, NaApiError> {
-        match args {
-            EndpointGetArgs::NoArgs => {
-                let data = na_client.get_data("account/details").await?;
-                let deets: Details = serde_json::from_value(data).unwrap();
-                Ok(deets)
-            }
-            _ => {
-                Err(NaApiError::UnknownError("No arguments allowed".to_owned()))
-            }
-        }
-    }
 }

@@ -33,7 +33,7 @@ use clap::Parser;
 use rnaapi::NaClient;
 use rnaapi::config::Settings;
 use rnaapi::endpoints;
-use rnaapi::{EndpointGet, EndpointGetArgs};
+use rnaapi::{EndpointGetAll, EndpointGetArgs, EndpointGetOne};
 
 #[tokio::main]
 async fn main() -> Result<()> {
