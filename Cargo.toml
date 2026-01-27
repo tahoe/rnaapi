@@ -1,25 +1,8 @@
-[package]
-name = "rnaapi"
-version = "2.0.1"
-edition = "2024"
-description = "NetActuate API client library"
-license = "GPL-3.0-only"
+[workspace]
+members = [
+    "rnaapi_lib",
+    "rnaapi_derive",
+    "rnatui",
+]
 
-[dependencies]
-rnaapi_derive = { path = "rnaapi_derive", version = "1.0.0"}
-hickory-resolver = "0.25.2"
-reqwest = { version = "0.12.28", features = ["blocking", "json"]}
-reqwest-hickory-resolver = "0.2.0"
-clap = { version = "4.5.49", features = ["derive"] }
-crossterm = "0.29.0"
-serde = { version = "1.0.228", features = ["derive", "default"] }
-serde_json = "1.0.145"
-tokio = {version = "1.47.1", features = ["full"]}
-axum = "0.8.6"
-lazy_static = "1.5.0"
-dotenvy = "0.15.7"
-chrono = {version = "0.4.42", features = ["serde"]}
-thiserror = "2.0.17"
-anyhow = "1.0.100"
-async-trait = "0.1.89"
-
+resolver = "3"
