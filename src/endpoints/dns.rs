@@ -43,7 +43,7 @@ pub struct Zone {
     pub ttl: Option<TtlType>,
     pub soa: Option<SOA>,
     pub records: Option<Vec<Record>>,
-    pub ns: Option<Vec<String>>,
+    pub ns: Option<Vec<Record>>,
 }
 
 //
