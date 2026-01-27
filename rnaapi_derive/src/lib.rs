@@ -31,7 +31,7 @@ fn impl_endpointgetall_trait(
         Ok(quote::quote! {
             #[async_trait]
             impl EndpointGetAll for #ident {
-                type Endpoint = Vec<#ident>;
+                type Endpoint = #ident;
                 async fn get_all(
                     na_client: &NaClient, args: EndpointGetArgs
                 ) -> Result<Vec<#ident>, NaApiError> {
@@ -52,7 +52,7 @@ fn impl_endpointgetall_trait(
         Ok(quote::quote! {
             #[async_trait]
             impl EndpointGetAll for #ident {
-                type Endpoint = Vec<#ident>;
+                type Endpoint = #ident;
                 async fn get_all(
                     na_client: &NaClient, args: EndpointGetArgs
                 ) -> Result<Vec<#ident>, NaApiError> {
@@ -73,7 +73,7 @@ fn impl_endpointgetall_trait(
         Ok(quote::quote! {
             #[async_trait]
             impl EndpointGetAll for #ident {
-                type Endpoint = Vec<#ident>;
+                type Endpoint = #ident;
                 async fn get_all(
                     na_client: &NaClient, args: EndpointGetArgs
                 ) -> Result<Vec<#ident>, NaApiError> {

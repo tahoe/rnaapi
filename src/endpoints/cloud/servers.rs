@@ -100,9 +100,9 @@ pub struct IPv4 {
 // IPv6IP struct
 // URL: https://vapi2.netactuate.com/api/cloud/ipv6?mbpkgid=<mbpkgid>&key=<api_key>
 //
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
 #[serde(rename_all = "snake_case")]
-#[getone(path = "cloud/ipv6?mbpkgid={}", args = 1)]
+#[getall(path = "cloud/ipv6?mbpkgid={}", args = 1)]
 pub struct IPv6 {
     pub id: u32,
     pub primary: u32,

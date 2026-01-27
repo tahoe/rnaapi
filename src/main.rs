@@ -131,21 +131,22 @@ async fn main() -> Result<()> {
         let zone = endpoints::Zone::get_one(
             &na_client,
             EndpointGetArgs::OneInt(zoneid),
-        )
-        .await?;
-        println!("Zone: {}", zone.name);
+        );
+        println!("zone: {:?}", zone.await?);
+        //.await?;
+        //println!("Zone: {}", zone.name);
 
-        // print out the SOA for the zone
-        let soa = zone.soa.unwrap();
-        println!("SOA: {}", soa.primary);
+        // // print out the SOA for the zone
+        // let soa = zone.soa.unwrap();
+        // println!("SOA: {}", soa.primary);
 
-        // print out the first record
-        let recs = zone.records.unwrap();
-        println!("1st Record: {}", recs[0].name);
+        // // print out the first record
+        // let recs = zone.records.unwrap();
+        // println!("1st Record: {}", recs[0].name);
 
-        // print out the first NS record
-        let nsrecs = zone.ns.unwrap();
-        println!("1st NS: {}", nsrecs[0])
+        // // print out the first NS record
+        // let nsrecs = zone.ns.unwrap();
+        // println!("1st NS: {}", nsrecs[0])
     } else {
         // submit jobs to the tokio async runtime
         // this automatically awaits so no need for .await
@@ -190,10 +191,11 @@ async fn main() -> Result<()> {
         println!();
         // list dns zones
         for zone in zones.unwrap() {
-            println!(
-                "ID: {}, Size: {}, Name: {}",
-                zone.id, zone.name, zone.zone_type
-            );
+            println!("zone: {:?}", zone);
+            //println!(
+            //    "ID: {}, Name: {}, Type: {}",
+            //    zone.id, zone.name, zone.zone_type
+            //);
         }
 
         println!();
