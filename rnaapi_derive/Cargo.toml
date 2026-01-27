@@ -2,6 +2,8 @@
 name = "rnaapi_derive"
 version = "1.0.0"
 edition = "2024"
+description = "Derive crate for building get endpoints"
+license = "GPL-3.0-only"
 
 [dependencies]
 deluxe = "0.5.0"
