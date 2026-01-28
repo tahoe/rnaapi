@@ -29,7 +29,9 @@
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
 use anyhow::Result;
+use clap::CommandFactory;
 use clap::{Parser, Subcommand};
+use clap_complete::{Shell, generate};
 use rnaapi::NaClient;
 use rnaapi::config::Settings;
 use rnaapi::endpoints;
@@ -55,6 +57,16 @@ async fn main() -> Result<()> {
 
     // check cli sub commands
     match &cli.command {
+        Some(Commands::GenerateCompletions { shell }) => {
+            let mut app = Cli::command();
+            let appclone = app.clone();
+            generate(
+                *shell,
+                &mut app,
+                appclone.get_name().to_string(),
+                &mut std::io::stdout(),
+            );
+        }
         Some(Commands::Server { id }) => {
             if *id >= 1 {
                 loc_mbpkgid = *id;
@@ -360,7 +372,7 @@ async fn main() -> Result<()> {
         for invoice in invoices.unwrap().iter().take(3) {
             println!("ID: {}, Status: {}", invoice.id, invoice.status);
         }
-    }
+    };
 
     Ok(())
 }
@@ -377,6 +389,9 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// generate completions
+    GenerateCompletions { shell: Shell },
+
     /// Server subcommands
     Server {
         // -i argument for picking an mbpkgid

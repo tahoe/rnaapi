@@ -8,9 +8,10 @@ description.workspace = true
 [dependencies]
 clap = "4.5.51"
 reqwest = "0.12.28"
-rnaapi = { path = "../rnaapi_lib/", version = "2.0.3" }
+rnaapi = { path = "../rnaapi_lib/", version = "2.0.4" }
 tokio = { version = "1.48.0", features = ["full"] }
 anyhow = "1.0.100"
+clap_complete = "4.5"
 ## unused until we do ratatui
 # crossterm = "0.28.1"
 # ratatui = "0.29.0"
