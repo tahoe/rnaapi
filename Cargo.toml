@@ -1,8 +1,13 @@
 [workspace]
+resolver = "3"
 members = [
     "rnaapi_lib",
     "rnaapi_derive",
     "rnatui",
 ]
+[workspace.package]
+version = "2.0.3"
+license = "GPL-3.0-only"
+edition = "2024"
+description = "NetActuate API client library and cli program"
 
-resolver = "3"

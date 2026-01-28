@@ -1,12 +1,12 @@
 [package]
 name = "rnaapi"
-version = "2.0.2"
-edition = "2024"
-description = "NetActuate API client library"
-license = "GPL-3.0-only"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+description.workspace = true
 
 [dependencies]
-rnaapi_derive = { path = "../rnaapi_derive", version = "1.0.0"}
+rnaapi_derive = { path = "../rnaapi_derive", version = "2.0.3"}
 hickory-resolver = "0.25.2"
 reqwest = { version = "0.12.28", features = ["blocking", "json"]}
 reqwest-hickory-resolver = "0.2.0"
