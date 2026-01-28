@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // check cli sub commands
-    match &cli.command {
+    match &cli.cmd {
         Some(Commands::GenerateCompletions { shell }) => {
             let mut app = Cli::command();
             let appclone = app.clone();
@@ -67,45 +67,46 @@ async fn main() -> Result<()> {
                 &mut std::io::stdout(),
             );
         }
-        Some(Commands::Server { id }) => {
-            if *id >= 1 {
-                loc_mbpkgid = *id;
-                command = "server";
-            } else {
-                command = "server";
+        Some(Commands::Get { cmd }) => match cmd {
+            GetCommands::Server { id } => {
+                if *id >= 1 {
+                    loc_mbpkgid = *id;
+                    command = "server";
+                } else {
+                    command = "server";
+                }
             }
-        }
-        Some(Commands::Dns { id }) => {
-            if *id >= 1 {
-                loc_zoneid = *id;
-                command = "dns";
-            } else {
-                command = "dns";
+            GetCommands::Dns { id } => {
+                if *id >= 1 {
+                    loc_zoneid = *id;
+                    command = "dns";
+                } else {
+                    command = "dns";
+                }
             }
-        }
-        Some(Commands::Ssh { id }) => {
-            if *id >= 1 {
-                ssh_keyid = *id;
-                command = "ssh";
-            } else {
-                command = "ssh";
+            GetCommands::Ssh { id } => {
+                if *id >= 1 {
+                    ssh_keyid = *id;
+                    command = "ssh";
+                } else {
+                    command = "ssh";
+                }
             }
-        }
-        Some(Commands::Location {}) => {
-            command = "location";
-        }
-        Some(Commands::Invoice { count }) => {
-            display_count = *count;
-            command = "invoice";
-        }
-        Some(Commands::Image {}) => {
-            command = "image";
-        }
-        Some(Commands::Account {}) => {
-            command = "account";
-        }
-        None => {}
-        _ => todo!(),
+            GetCommands::Invoice { count } => {
+                display_count = *count;
+                command = "invoice";
+            }
+            GetCommands::Location {} => {
+                command = "location";
+            }
+            GetCommands::Image {} => {
+                command = "image";
+            }
+            GetCommands::Account {} => {
+                command = "account";
+            }
+        },
+        _ => {}
     }
     // playing with new constructor for client
     // let na_client = NaClient::new(API_KEY.to_owned(), API_ADDRESS.to_owned()).await;
@@ -297,82 +298,83 @@ async fn main() -> Result<()> {
         for invoice in invoices.iter().take(display_count) {
             println!("ID: {}, Status: {}", invoice.id, invoice.status);
         }
-    } else {
-        // submit jobs to the tokio async runtime
-        // this automatically awaits so no need for .await
-        let (srvrs, locs, pkgs, imgs, zones, ssh_keys, deets, invoices) = tokio::join!(
-            endpoints::Server::get_all(&na_client, EndpointGetArgs::NoArgs),
-            endpoints::Location::get_all(&na_client, EndpointGetArgs::NoArgs),
-            endpoints::Package::get_all(&na_client, EndpointGetArgs::NoArgs),
-            endpoints::Image::get_all(&na_client, EndpointGetArgs::NoArgs),
-            endpoints::Zone::get_all(&na_client, EndpointGetArgs::NoArgs),
-            endpoints::SSHKeys::get_all(&na_client, EndpointGetArgs::NoArgs),
-            endpoints::Details::get_one(&na_client, EndpointGetArgs::NoArgs),
-            endpoints::Invoices::get_all(&na_client, EndpointGetArgs::NoArgs),
-        );
+    }
+    // else {
+    //     // submit jobs to the tokio async runtime
+    //     // this automatically awaits so no need for .await
+    //     let (srvrs, locs, pkgs, imgs, zones, ssh_keys, deets, invoices) = tokio::join!(
+    //         endpoints::Server::get_all(&na_client, EndpointGetArgs::NoArgs),
+    //         endpoints::Location::get_all(&na_client, EndpointGetArgs::NoArgs),
+    //         endpoints::Package::get_all(&na_client, EndpointGetArgs::NoArgs),
+    //         endpoints::Image::get_all(&na_client, EndpointGetArgs::NoArgs),
+    //         endpoints::Zone::get_all(&na_client, EndpointGetArgs::NoArgs),
+    //         endpoints::SSHKeys::get_all(&na_client, EndpointGetArgs::NoArgs),
+    //         endpoints::Details::get_one(&na_client, EndpointGetArgs::NoArgs),
+    //         endpoints::Invoices::get_all(&na_client, EndpointGetArgs::NoArgs),
+    //     );
 
-        for srvr in srvrs.unwrap() {
-            println!("fqdn: {}, mbpkgid: {}", srvr.fqdn, srvr.mbpkgid);
-        }
+    //     for srvr in srvrs.unwrap() {
+    //         println!("fqdn: {}, mbpkgid: {}", srvr.fqdn, srvr.mbpkgid);
+    //     }
 
-        println!();
-        // list locations
-        for loc in locs.unwrap() {
-            println!("Name: {}, Continent: {}", loc.name, loc.continent);
-        }
+    //     println!();
+    //     // list locations
+    //     for loc in locs.unwrap() {
+    //         println!("Name: {}, Continent: {}", loc.name, loc.continent);
+    //     }
 
-        println!();
-        // list packages
-        for pkg in pkgs.unwrap() {
-            println!("Name: {}, Continent: {}", pkg.name, pkg.city);
-        }
+    //     println!();
+    //     // list packages
+    //     for pkg in pkgs.unwrap() {
+    //         println!("Name: {}, Continent: {}", pkg.name, pkg.city);
+    //     }
 
-        println!();
-        // list images
-        for img in imgs.unwrap() {
-            println!(
-                "ID: {}, Size: {}, Name: {}",
-                img.id,
-                img.size.unwrap_or("null".to_owned()),
-                img.os.unwrap_or("null".to_owned())
-            );
-        }
+    //     println!();
+    //     // list images
+    //     for img in imgs.unwrap() {
+    //         println!(
+    //             "ID: {}, Size: {}, Name: {}",
+    //             img.id,
+    //             img.size.unwrap_or("null".to_owned()),
+    //             img.os.unwrap_or("null".to_owned())
+    //         );
+    //     }
 
-        println!();
-        // list dns zones
-        for zone in zones.unwrap() {
-            println!(
-                "ID: {}, Size: {}, Name: {}",
-                zone.id, zone.name, zone.zone_type
-            );
-        }
+    //     println!();
+    //     // list dns zones
+    //     for zone in zones.unwrap() {
+    //         println!(
+    //             "ID: {}, Size: {}, Name: {}",
+    //             zone.id, zone.name, zone.zone_type
+    //         );
+    //     }
 
-        println!();
-        // print some ssh keys
-        for sshkey in ssh_keys.unwrap() {
-            println!(
-                "Key: {}, Fingerprint: {}",
-                sshkey.name, sshkey.fingerprint
-            );
-        }
+    //     println!();
+    //     // print some ssh keys
+    //     for sshkey in ssh_keys.unwrap() {
+    //         println!(
+    //             "Key: {}, Fingerprint: {}",
+    //             sshkey.name, sshkey.fingerprint
+    //         );
+    //     }
 
-        println!();
-        // print some account deets
-        println!(
-            "FullName: {:?}, Address: {:?}, {:?} {:?} {:?}",
-            deets.clone().unwrap().fullname,
-            deets.clone().unwrap().address1,
-            deets.clone().unwrap().city,
-            deets.clone().unwrap().state,
-            deets.clone().unwrap().postcode
-        );
+    //     println!();
+    //     // print some account deets
+    //     println!(
+    //         "FullName: {:?}, Address: {:?}, {:?} {:?} {:?}",
+    //         deets.clone().unwrap().fullname,
+    //         deets.clone().unwrap().address1,
+    //         deets.clone().unwrap().city,
+    //         deets.clone().unwrap().state,
+    //         deets.clone().unwrap().postcode
+    //     );
 
-        println!();
-        // print some of the invoices, say 3?
-        for invoice in invoices.unwrap().iter().take(3) {
-            println!("ID: {}, Status: {}", invoice.id, invoice.status);
-        }
-    };
+    //     println!();
+    //     // print some of the invoices, say 3?
+    //     for invoice in invoices.unwrap().iter().take(3) {
+    //         println!("ID: {}, Status: {}", invoice.id, invoice.status);
+    //     }
+    // };
 
     Ok(())
 }
@@ -384,14 +386,21 @@ async fn main() -> Result<()> {
 #[command(version, about)]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Commands>,
+    cmd: Option<Commands>,
 }
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    Get {
+        #[command(subcommand)]
+        cmd: GetCommands,
+    },
     /// generate completions
     GenerateCompletions { shell: Shell },
+}
 
+#[derive(Subcommand, Debug)]
+enum GetCommands {
     /// Server subcommands
     Server {
         // -i argument for picking an mbpkgid
@@ -406,13 +415,12 @@ enum Commands {
         id: u32,
     },
 
-    /// Job subcommands
-    Job {
-        // -i argument for picking a Job
-        #[arg(short, long, default_value_t = 0)]
-        id: u32,
-    },
-
+    // /// Job subcommands
+    // Job {
+    //     // -i argument for picking a Job
+    //     #[arg(short, long, default_value_t = 0)]
+    //     id: u32,
+    // },
     /// SSh subcommands
     Ssh {
         // -i argument for ssh keyid
@@ -420,22 +428,22 @@ enum Commands {
         id: u32,
     },
 
-    /// IPs subcommands
-    Ip {
-        // --proto argument (-p) for 4 or 6
-        // default to 4
-        #[arg(short, long, default_value_t = 4)]
-        proto: u32,
-    },
-    /// Location subcommands
-    Location {},
-
+    // /// IPs subcommands
+    // Ip {
+    //     // --proto argument (-p) for 4 or 6
+    //     // default to 4
+    //     #[arg(short, long, default_value_t = 4)]
+    //     proto: u32,
+    // },
     /// Invoices subcommands
     Invoice {
         // -i argument for number to display
         #[arg(short, long, default_value_t = 5)]
         count: usize,
     },
+
+    /// Location subcommands
+    Location {},
 
     /// Images subcommands
     Image {},
