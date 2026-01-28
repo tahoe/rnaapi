@@ -384,6 +384,7 @@ async fn main() -> Result<()> {
 ///
 #[derive(Parser, Debug)]
 #[command(version, about)]
+#[command(arg_required_else_help(true))]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Commands>,
