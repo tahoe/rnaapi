@@ -49,6 +49,7 @@ async fn main() -> Result<()> {
     let mut ssh_keyid: u32 = 0;
     let mut display_count: usize = 0;
     let mut loc_mbpkgid: u32 = 0;
+    let mut loc_jobid: u32 = 0;
     let mut loc_zoneid: u32 = 0;
     let mut command: &str = "default";
 
@@ -68,9 +69,9 @@ async fn main() -> Result<()> {
             );
         }
         Some(Commands::Get { cmd }) => match cmd {
-            GetCommands::Server { id } => {
-                if *id >= 1 {
-                    loc_mbpkgid = *id;
+            GetCommands::Server { mbpkgid } => {
+                if *mbpkgid >= 1 {
+                    loc_mbpkgid = *mbpkgid;
                     command = "server";
                 } else {
                     command = "server";
@@ -90,6 +91,15 @@ async fn main() -> Result<()> {
                     command = "ssh";
                 } else {
                     command = "ssh";
+                }
+            }
+            GetCommands::Job { mbpkgid, jobid } => {
+                if *mbpkgid >= 1 {
+                    loc_mbpkgid = *mbpkgid;
+                    command = "job";
+                }
+                if *jobid >= 1 {
+                    loc_jobid = *jobid;
                 }
             }
             GetCommands::Invoice { count } => {
@@ -246,6 +256,34 @@ async fn main() -> Result<()> {
                 println!(
                     "ID: {}, Key: {}, Fingerprint: {}",
                     sshkey.id, sshkey.name, sshkey.fingerprint
+                );
+            }
+        }
+    } else if command == "job" {
+        if loc_mbpkgid > 0 && loc_jobid > 0 {
+            let job = endpoints::SrvJob::get_one(
+                &na_client,
+                EndpointGetArgs::TwoInt(loc_mbpkgid, loc_jobid),
+            )
+            .await?;
+            println!();
+            // print some ssh keys
+            println!(
+                "ID: {}, Status: {}, Command: {}",
+                job.id, job.status, job.command
+            );
+        } else if loc_mbpkgid > 0 {
+            let jobs = endpoints::SrvJob::get_all(
+                &na_client,
+                EndpointGetArgs::OneInt(loc_mbpkgid),
+            )
+            .await?;
+            println!();
+            // print some ssh keys
+            for job in jobs {
+                println!(
+                    "ID: {}, Status: {}, Command: {}",
+                    job.id, job.status, job.command
                 );
             }
         }
@@ -406,7 +444,7 @@ enum GetCommands {
     Server {
         // -i argument for picking an mbpkgid
         #[arg(short, long, default_value_t = 0)]
-        id: u32,
+        mbpkgid: u32,
     },
 
     /// DNS subcommands
@@ -416,17 +454,20 @@ enum GetCommands {
         id: u32,
     },
 
-    // /// Job subcommands
-    // Job {
-    //     // -i argument for picking a Job
-    //     #[arg(short, long, default_value_t = 0)]
-    //     id: u32,
-    // },
     /// SSh subcommands
     Ssh {
         // -i argument for ssh keyid
         #[arg(short, long, default_value_t = 0)]
         id: u32,
+    },
+
+    /// Job subcommands
+    Job {
+        // -i argument for picking a Job
+        #[arg(short, long, default_value_t = 0)]
+        mbpkgid: u32,
+        #[arg(short, long, default_value_t = 0)]
+        jobid: u32,
     },
 
     // /// IPs subcommands

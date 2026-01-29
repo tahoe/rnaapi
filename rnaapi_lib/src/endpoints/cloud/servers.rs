@@ -58,7 +58,7 @@ pub struct Server {
 )]
 #[serde(rename_all = "snake_case")]
 #[getall(path = "cloud/server/{}/jobs", args = 1)]
-#[getone(path = "cloud/server/{}/{}", args = 2)]
+#[getone(path = "cloud/server/{}/jobs/{}", args = 2)]
 pub struct SrvJob {
     pub id: u32,
     // #[serde(with = "custom_datetime_format_seconds")]
