@@ -501,7 +501,7 @@ enum GetCommands {
     /// Job subcommands
     Job {
         // -i argument for picking a Job
-        #[arg(short, long, default_value_t = 0)]
+        #[arg(short, long)]
         mbpkgid: u32,
         #[arg(short, long, default_value_t = 0)]
         jobid: u32,
@@ -511,7 +511,7 @@ enum GetCommands {
     Ip {
         // --proto argument (-p) for 4 or 6
         // default to 4
-        #[arg(short, long, default_value_t = 0)]
+        #[arg(short, long)]
         mbpkgid: u32,
     },
 
