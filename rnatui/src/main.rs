@@ -478,6 +478,7 @@ enum Commands {
 #[derive(Subcommand, Debug)]
 enum GetCommands {
     /// Server subcommands
+    #[command(visible_alias = "srv")]
     Server {
         // -i argument for picking an mbpkgid
         #[arg(short, long, default_value_t = 0)]
@@ -516,6 +517,7 @@ enum GetCommands {
     },
 
     /// Invoices subcommands
+    #[command(visible_alias = "inv")]
     Invoice {
         // -i argument for number to display
         #[arg(short, long, default_value_t = 5)]
@@ -523,9 +525,11 @@ enum GetCommands {
     },
 
     /// Location subcommands
+    #[command(visible_alias = "loc")]
     Location {},
 
     /// Images subcommands
+    #[command(visible_alias = "img")]
     Image {},
 
     /// Account subcommands
