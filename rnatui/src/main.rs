@@ -472,6 +472,7 @@ enum Commands {
         cmd: GetCommands,
     },
     /// generate completions
+    #[command(visible_alias = "gen")]
     GenerateCompletions { shell: Shell },
 }
 
