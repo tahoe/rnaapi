@@ -97,9 +97,15 @@ async fn main() -> Result<()> {
                 if *mbpkgid >= 1 {
                     loc_mbpkgid = *mbpkgid;
                     command = "job";
+                    if *jobid >= 1 {
+                        loc_jobid = *jobid;
+                    }
                 }
-                if *jobid >= 1 {
-                    loc_jobid = *jobid;
+            }
+            GetCommands::Ip { mbpkgid } => {
+                if *mbpkgid >= 1 {
+                    loc_mbpkgid = *mbpkgid;
+                    command = "ip";
                 }
             }
             GetCommands::Invoice { count } => {
@@ -287,6 +293,37 @@ async fn main() -> Result<()> {
                 );
             }
         }
+    } else if command == "ip" {
+        if loc_mbpkgid > 0 {
+            let (ipv4s, ipv6s) = tokio::join!(
+                endpoints::IPv4::get_all(
+                    &na_client,
+                    EndpointGetArgs::OneInt(loc_mbpkgid)
+                ),
+                endpoints::IPv6::get_all(
+                    &na_client,
+                    EndpointGetArgs::OneInt(loc_mbpkgid)
+                ),
+            );
+
+            // print IPv4 Addresses
+            for ipv4 in ipv4s.unwrap() {
+                println!(
+                    "Reverse: {}, IP: {}, Gateway: {}",
+                    ipv4.reverse, ipv4.ip, ipv4.gateway
+                );
+            }
+
+            // print IPv6 Addresses
+            for ipv6 in ipv6s.unwrap() {
+                println!(
+                    "Reverse: {}, IP: {}, Gateway: {}",
+                    ipv6.reverse, ipv6.ip, ipv6.gateway
+                );
+            }
+        } else {
+            println!("you need to provide an mbpkgid");
+        }
     } else if command == "location" {
         let locs =
             endpoints::Location::get_all(&na_client, EndpointGetArgs::NoArgs)
@@ -470,13 +507,14 @@ enum GetCommands {
         jobid: u32,
     },
 
-    // /// IPs subcommands
-    // Ip {
-    //     // --proto argument (-p) for 4 or 6
-    //     // default to 4
-    //     #[arg(short, long, default_value_t = 4)]
-    //     proto: u32,
-    // },
+    /// IPs subcommands
+    Ip {
+        // --proto argument (-p) for 4 or 6
+        // default to 4
+        #[arg(short, long, default_value_t = 0)]
+        mbpkgid: u32,
+    },
+
     /// Invoices subcommands
     Invoice {
         // -i argument for number to display
