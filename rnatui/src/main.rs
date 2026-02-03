@@ -205,6 +205,26 @@ async fn main() -> Result<()> {
             println!();
             // print server status, very unverbose
             println!("Status: {}", stat.unwrap().status);
+
+            // print out bandwidth usage
+            println!();
+            let mut bw_usage = endpoints::MonthlyBw::get_all(
+                &na_client,
+                EndpointGetArgs::OneInt(loc_mbpkgid),
+            )
+            .await?;
+            println!();
+            bw_usage.sort_by_key(|b| {
+                let date_with_day = format!("{}-01", b.date);
+                NaiveDate::parse_from_str(&date_with_day, "%Y-%m-%d")
+                    .expect("Failed to parse date")
+            });
+            for usage in bw_usage {
+                println!(
+                    "Date: {}, Rx: {}, Tx: {}",
+                    usage.date, usage.rx, usage.tx
+                );
+            }
         } else {
             let srvrs =
                 endpoints::Server::get_all(&na_client, EndpointGetArgs::NoArgs)
