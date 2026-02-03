@@ -144,7 +144,7 @@ async fn main() -> Result<()> {
         if loc_mbpkgid > 0 {
             // submit jobs to the tokio async runtime
             // this automatically awaits so no need for .await
-            let (srv, jobs, ipv4s, ipv6s, stat, bw_usage) = tokio::join!(
+            let (server, srvjobs, ipv4s, ipv6s, status, bw_usage) = tokio::join!(
                 endpoints::Server::get_one(
                     &na_client,
                     EndpointGetArgs::OneInt(loc_mbpkgid)
@@ -172,57 +172,66 @@ async fn main() -> Result<()> {
             );
 
             // print basic server info
-            println!(
-                "Package: {}, fqdn: {}, mbpkgid: {}",
-                srv.clone().unwrap().domu_package,
-                srv.clone().unwrap().fqdn,
-                srv.clone().unwrap().mbpkgid
-            );
+            if let Ok(srv) = server {
+                println!(
+                    "Package: {}, fqdn: {}, mbpkgid: {}",
+                    srv.domu_package, srv.fqdn, srv.mbpkgid
+                );
+            }
 
             println!();
             // print the job data
-            for job in jobs.unwrap() {
-                println!(
-                    "Inserted: {}, Status: {}, command: {}",
-                    job.ts_insert, job.status, job.command
-                );
+            if let Ok(jobs) = srvjobs {
+                for job in jobs {
+                    println!(
+                        "Inserted: {}, Status: {}, command: {}",
+                        job.ts_insert, job.status, job.command
+                    );
+                }
             }
 
             println!();
             // print IPv4 Addresses
-            for ipv4 in ipv4s.unwrap() {
-                println!(
-                    "Reverse: {}, IP: {}, Gateway: {}",
-                    ipv4.reverse, ipv4.ip, ipv4.gateway
-                );
+            if let Ok(ip4s) = ipv4s {
+                for ipv4 in ip4s {
+                    println!(
+                        "Reverse: {}, IP: {}, Gateway: {}",
+                        ipv4.reverse, ipv4.ip, ipv4.gateway
+                    );
+                }
             }
 
             println!();
             // print IPv6 Addresses
-            for ipv6 in ipv6s.unwrap() {
-                println!(
-                    "Reverse: {}, IP: {}, Gateway: {}",
-                    ipv6.reverse, ipv6.ip, ipv6.gateway
-                );
+            if let Ok(ip6s) = ipv6s {
+                for ipv6 in ip6s {
+                    println!(
+                        "Reverse: {}, IP: {}, Gateway: {}",
+                        ipv6.reverse, ipv6.ip, ipv6.gateway
+                    );
+                }
             }
 
             println!();
             // print server status, very unverbose
-            println!("Status: {}", stat.unwrap().status);
+            if let Ok(stat) = status {
+                println!("Status: {}", stat.status);
+            }
 
             // print out bandwidth usage
             println!();
-            let mut bw_usage = bw_usage.unwrap();
-            bw_usage.sort_by_key(|b| {
-                let date_with_day = format!("{}-01", b.date);
-                NaiveDate::parse_from_str(&date_with_day, "%Y-%m-%d")
-                    .expect("Failed to parse date")
-            });
-            for usage in bw_usage {
-                println!(
-                    "Date: {}, Rx: {}, Tx: {}",
-                    usage.date, usage.rx, usage.tx
-                );
+            if let Ok(mut bwusage) = bw_usage {
+                bwusage.sort_by_key(|b| {
+                    let date_with_day = format!("{}-01", b.date);
+                    NaiveDate::parse_from_str(&date_with_day, "%Y-%m-%d")
+                        .expect("Failed to parse date")
+                });
+                for usage in bwusage {
+                    println!(
+                        "Date: {}, Rx: {}, Tx: {}",
+                        usage.date, usage.rx, usage.tx
+                    );
+                }
             }
         } else {
             let srvrs =
@@ -245,16 +254,19 @@ async fn main() -> Result<()> {
             println!("Zone: {}", zone.name);
 
             // print out the SOA for the zone
-            let soa = zone.soa.unwrap();
-            println!("SOA: {}", soa.primary);
+            if let Some(soa) = zone.soa {
+                println!("SOA: {}", soa.primary);
+            }
 
             // print out the first record
-            let recs = zone.records.unwrap();
-            println!("1st Record: {}", recs[0].name);
+            if let Some(recs) = zone.records {
+                println!("1st Record: {}", recs[0].name);
+            }
 
             // print out the first NS record
-            let nsrecs = zone.ns.unwrap();
-            println!("1st NS: {}", nsrecs[0].name)
+            if let Some(nsrecs) = zone.ns {
+                println!("1st NS: {}", nsrecs[0].name)
+            }
         } else {
             println!();
             // list dns zones
@@ -338,19 +350,23 @@ async fn main() -> Result<()> {
             );
 
             // print IPv4 Addresses
-            for ipv4 in ipv4s.unwrap() {
-                println!(
-                    "Reverse: {}, IP: {}, Gateway: {}",
-                    ipv4.reverse, ipv4.ip, ipv4.gateway
-                );
+            if let Ok(ip4s) = ipv4s {
+                for ipv4 in ip4s {
+                    println!(
+                        "Reverse: {}, IP: {}, Gateway: {}",
+                        ipv4.reverse, ipv4.ip, ipv4.gateway
+                    );
+                }
             }
 
             // print IPv6 Addresses
-            for ipv6 in ipv6s.unwrap() {
-                println!(
-                    "Reverse: {}, IP: {}, Gateway: {}",
-                    ipv6.reverse, ipv6.ip, ipv6.gateway
-                );
+            if let Ok(ip6s) = ipv6s {
+                for ipv6 in ip6s {
+                    println!(
+                        "Reverse: {}, IP: {}, Gateway: {}",
+                        ipv6.reverse, ipv6.ip, ipv6.gateway
+                    );
+                }
             }
         } else {
             println!("you need to provide an mbpkgid");
