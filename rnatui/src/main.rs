@@ -144,7 +144,7 @@ async fn main() -> Result<()> {
         if loc_mbpkgid > 0 {
             // submit jobs to the tokio async runtime
             // this automatically awaits so no need for .await
-            let (srv, jobs, ipv4s, ipv6s, stat) = tokio::join!(
+            let (srv, jobs, ipv4s, ipv6s, stat, bw_usage) = tokio::join!(
                 endpoints::Server::get_one(
                     &na_client,
                     EndpointGetArgs::OneInt(loc_mbpkgid)
@@ -164,6 +164,10 @@ async fn main() -> Result<()> {
                 endpoints::SrvStatus::get_one(
                     &na_client,
                     EndpointGetArgs::OneInt(loc_mbpkgid)
+                ),
+                endpoints::MonthlyBw::get_all(
+                    &na_client,
+                    EndpointGetArgs::OneInt(loc_mbpkgid),
                 ),
             );
 
@@ -208,12 +212,7 @@ async fn main() -> Result<()> {
 
             // print out bandwidth usage
             println!();
-            let mut bw_usage = endpoints::MonthlyBw::get_all(
-                &na_client,
-                EndpointGetArgs::OneInt(loc_mbpkgid),
-            )
-            .await?;
-            println!();
+            let mut bw_usage = bw_usage.unwrap();
             bw_usage.sort_by_key(|b| {
                 let date_with_day = format!("{}-01", b.date);
                 NaiveDate::parse_from_str(&date_with_day, "%Y-%m-%d")
