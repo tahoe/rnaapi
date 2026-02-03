@@ -51,6 +51,7 @@ async fn main() -> Result<()> {
     let mut loc_mbpkgid: u32 = 0;
     let mut loc_jobid: u32 = 0;
     let mut loc_zoneid: u32 = 0;
+    let mut loc_sizes: u32 = 0;
     let mut command: &str = "default";
 
     // parse our args into args
@@ -111,6 +112,10 @@ async fn main() -> Result<()> {
             GetCommands::Invoice { count } => {
                 display_count = *count;
                 command = "invoice";
+            }
+            GetCommands::Sizes { id } => {
+                loc_sizes = *id;
+                command = "sizes";
             }
             GetCommands::Location {} => {
                 command = "location";
@@ -373,6 +378,16 @@ async fn main() -> Result<()> {
         for invoice in invoices.iter().take(display_count) {
             println!("ID: {}, Status: {}", invoice.id, invoice.status);
         }
+    } else if command == "sizes" {
+        let sizes = endpoints::Sizes::get_all(
+            &na_client,
+            EndpointGetArgs::OneInt(loc_sizes),
+        )
+        .await?;
+        // print some of the invoices, say 3?
+        for size in sizes.iter().take(40) {
+            println!("ID: {}, Name: {}", size.plan_id, size.plan);
+        }
     }
     Ok(())
 }
@@ -446,6 +461,14 @@ enum GetCommands {
         // -i argument for number to display
         #[arg(short, long, default_value_t = 5)]
         count: usize,
+    },
+
+    /// Invoices subcommands
+    #[command(visible_alias = "sz")]
+    Sizes {
+        // -i argument for number to display
+        #[arg(short, long)]
+        id: u32,
     },
 
     /// Location subcommands

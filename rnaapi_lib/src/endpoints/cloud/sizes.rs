@@ -10,7 +10,7 @@ use async_trait::async_trait;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
 #[serde(rename_all = "snake_case")]
 #[getall(path = "cloud/sizes/{}", args = 1)]
-pub struct Image {
+pub struct Sizes {
     pub plan_id: u32,
     pub plan: String,
     pub ram: String,
@@ -19,5 +19,5 @@ pub struct Image {
     pub price: String,
     pub cpu: u32,
     pub port: String,
-    pub available: u32,
+    pub available: f32,
 }
