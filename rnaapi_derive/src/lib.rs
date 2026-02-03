@@ -58,9 +58,7 @@ fn impl_endpointgetall_trait(
                 ) -> Result<Vec<#ident>, NaApiError> {
                     match args {
                         EndpointGetArgs::OneInt(arg1) => {
-                            // println!("Path: {:?}", &format!(#path, arg1));
                             let data = na_client.get_data(&format!(#path, arg1)).await?;
-                            // println!("Data: {:?}", data);
                             let results: Vec<#ident> = serde_json::from_value(data).unwrap();
                             Ok(results)
                         }

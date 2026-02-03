@@ -112,3 +112,16 @@ pub struct IPv6 {
     pub gateway: String,
     pub broadcast: String,
 }
+
+//
+// SrvrMonthlyBw struct
+// URL: https://vapi2.netactuate.com/api/cloud/ipv4?mbpkgid=<mbpkgid>&key=<api_key>
+//
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
+#[serde(rename_all = "snake_case")]
+#[getall(path = "cloud/servermonthlybw/{}", args = 1)]
+pub struct MonthlyBw {
+    pub date: String,
+    pub rx: u32,
+    pub tx: u32,
+}

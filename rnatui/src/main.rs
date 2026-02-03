@@ -29,6 +29,7 @@
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
 use anyhow::Result;
+use chrono::NaiveDate;
 use clap::CommandFactory;
 use clap::{Parser, Subcommand};
 use clap_complete::{Shell, generate};
@@ -107,6 +108,12 @@ async fn main() -> Result<()> {
                 if *mbpkgid >= 1 {
                     loc_mbpkgid = *mbpkgid;
                     command = "ip";
+                }
+            }
+            GetCommands::Bandwidth { mbpkgid } => {
+                if *mbpkgid >= 1 {
+                    loc_mbpkgid = *mbpkgid;
+                    command = "bandwidth";
                 }
             }
             GetCommands::Invoice { count } => {
@@ -329,6 +336,24 @@ async fn main() -> Result<()> {
         } else {
             println!("you need to provide an mbpkgid");
         }
+    } else if command == "bandwidth" {
+        let mut bw_usage = endpoints::MonthlyBw::get_all(
+            &na_client,
+            EndpointGetArgs::OneInt(loc_mbpkgid),
+        )
+        .await?;
+        println!();
+        bw_usage.sort_by_key(|b| {
+            let date_with_day = format!("{}-01", b.date);
+            NaiveDate::parse_from_str(&date_with_day, "%Y-%m-%d")
+                .expect("Failed to parse date")
+        });
+        for usage in bw_usage {
+            println!(
+                "Date: {}, Rx: {}, Tx: {}",
+                usage.date, usage.rx, usage.tx
+            );
+        }
     } else if command == "location" {
         let locs =
             endpoints::Location::get_all(&na_client, EndpointGetArgs::NoArgs)
@@ -451,6 +476,13 @@ enum GetCommands {
     Ip {
         // --proto argument (-p) for 4 or 6
         // default to 4
+        #[arg(short, long)]
+        mbpkgid: u32,
+    },
+
+    /// Monthly Bandwidth subcommands
+    #[command(visible_alias = "bw")]
+    Bandwidth {
         #[arg(short, long)]
         mbpkgid: u32,
     },
