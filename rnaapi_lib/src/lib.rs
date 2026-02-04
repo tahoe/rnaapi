@@ -105,14 +105,22 @@ pub trait EndpointGetAll {
 
 impl NaClient {
     /// build the client to use local resolver, IE Ipv4
-    pub async fn new(api_key: String, address: String) -> Self {
+    pub async fn new(
+        api_key: String, address: String,
+    ) -> Result<NaClient, NaApiError> {
         let mut builder = ClientBuilder::new();
         builder = builder.dns_resolver(Arc::new(HickoryResolver::default()));
-        let http_client = builder.build().unwrap();
-        Self {
-            api_key,
-            address,
-            http_client,
+        let client = builder.build();
+        match client {
+            Ok(http_client) => Ok(Self {
+                api_key,
+                address,
+                http_client,
+            }),
+            Err(e) => Err(NaApiError::UnknownError(format!(
+                "Error building client: {:?}",
+                e
+            ))),
         }
     }
 
@@ -159,8 +167,14 @@ impl NaClient {
         } else {
             let result_message = result.get("message");
             if let Some(message) = result_message {
-                let code = result.get("code").unwrap();
-                Err(NaApiError::APIKeyInvalid(format!("{code}: {message}")))
+                if let Some(code) = result.get("code") {
+                    Err(NaApiError::APIKeyInvalid(format!("{code}: {message}")))
+                } else {
+                    Err(NaApiError::UnknownError(format!(
+                        "Could not reach: {}{}",
+                        self.api_key, path
+                    )))
+                }
             } else {
                 Err(NaApiError::UnknownError(format!(
                     "Could not reach: {}{}",

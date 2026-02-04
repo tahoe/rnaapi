@@ -138,7 +138,7 @@ async fn main() -> Result<()> {
     }
     // playing with new constructor for client
     // let na_client = NaClient::new(API_KEY.to_owned(), API_ADDRESS.to_owned()).await;
-    let na_client = NaClient::new(settings.api_key, settings.api_url).await;
+    let na_client = NaClient::new(settings.api_key, settings.api_url).await?;
 
     if command == "server" {
         if loc_mbpkgid > 0 {

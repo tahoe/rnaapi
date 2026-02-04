@@ -28,11 +28,4 @@ pub struct SSHKeys {
     pub ssh_key: String,
     pub fingerprint: String,
     pub name: String,
-    // #[serde(with = "custom_datetime_format_microseconds")]
-    // pub created_at: NaiveDateTime,
-    // #[serde(with = "custom_datetime_format_microseconds")]
-    // pub updated_at: NaiveDateTime,
-    // pub mb_id: u32,
-    // pub created_at: String,
-    // pub updated_at: String,
 }
