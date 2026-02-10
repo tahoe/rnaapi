@@ -37,6 +37,7 @@ use rnaapi::NaClient;
 use rnaapi::config::Settings;
 use rnaapi::endpoints;
 use rnaapi::{EndpointGetAll, EndpointGetArgs, EndpointGetOne};
+use rnatui::get_pub_key;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -132,6 +133,10 @@ async fn main() -> Result<()> {
             }
             GetCommands::Account {} => {
                 command = "account";
+            }
+            GetCommands::Pubkey {} => {
+                let pubkey = get_pub_key("butter_rsa.pub");
+                println!("PubKey for butter_rsa.pub is: {}", pubkey.unwrap());
             }
         },
         _ => {}
@@ -548,4 +553,7 @@ enum GetCommands {
 
     /// Account subcommands
     Account {},
+
+    /// Get Pub Key from file
+    Pubkey {},
 }
