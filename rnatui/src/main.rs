@@ -36,8 +36,8 @@ use rnaapi::NaClient;
 use rnaapi::config::Settings;
 use rnaapi::endpoints;
 use rnaapi::{EndpointGetAll, EndpointGetArgs, EndpointGetOne};
-use rnatui::get_pub_key;
-use rnatui::{Cli, Commands, GetCommands};
+use rnatui::commands::get_pub_key;
+use rnatui::commands::{Cli, Commands, GetCommands};
 
 #[tokio::main]
 async fn main() -> Result<()> {
