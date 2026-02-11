@@ -104,7 +104,7 @@ pub enum GetCommands {
         count: usize,
     },
 
-    /// Invoices subcommands
+    /// Sizes subcommands
     #[command(visible_alias = "sz")]
     Sizes {
         // -i argument for number to display
