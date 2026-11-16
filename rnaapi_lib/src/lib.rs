@@ -27,14 +27,15 @@
 use errors::NaApiError;
 use reqwest::ClientBuilder;
 use reqwest_hickory_resolver::HickoryResolver;
-use serde_json::Value;
+use serde::Serialize;
+use serde_json::{Map, Value};
 use std::sync::Arc;
 use std::time::Duration;
 
 pub mod config;
 pub mod endpoints;
 pub mod errors;
-pub use rnaapi_derive::{EndpointGetAll, EndpointGetOne};
+pub use rnaapi_derive::{EndpointGetAll, EndpointGetOne, EndpointWrite};
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -104,6 +105,66 @@ impl NaClient {
         Ok(result_json)
     }
 
+    /// Send a write request and return the JSON `data` field.
+    ///
+    /// A successful response with no `data` field yields `Null`, which is what
+    /// delete and other empty writes return.
+    pub(crate) async fn send_data(
+        &self, method: &str, path: &str, content_type: Option<&str>,
+        body: Option<Vec<u8>>,
+    ) -> Result<Value, NaApiError> {
+        let url = build_url(&self.address, path, &self.api_key)?;
+        let http_method = reqwest::Method::from_bytes(method.as_bytes())
+            .map_err(|err| {
+                NaApiError::Request(format!("invalid method `{method}`: {err}"))
+            })?;
+        let mut request = self.http_client.request(http_method, url);
+        if let Some(content_type) = content_type {
+            request =
+                request.header(reqwest::header::CONTENT_TYPE, content_type);
+        }
+        if let Some(body) = body {
+            request = request.body(body);
+        }
+        let response = request.send().await.map_err(|err| {
+            NaApiError::Request(redact(
+                &format!("request failed: {}", err.without_url()),
+                &self.api_key,
+            ))
+        })?;
+        let status = response.status();
+        let text = response.text().await.map_err(|err| {
+            NaApiError::Request(redact(
+                &format!("reading response failed: {}", err.without_url()),
+                &self.api_key,
+            ))
+        })?;
+        let result_json = if text.trim().is_empty() {
+            if status.is_success() {
+                Value::Object(Map::new())
+            } else {
+                return Err(NaApiError::Api(format!(
+                    "empty response (HTTP {status})"
+                )));
+            }
+        } else {
+            serde_json::from_str(&text).map_err(|err| {
+                NaApiError::Deserialize(redact(
+                    &format!("HTTP {status}: {err}; body: {text}"),
+                    &self.api_key,
+                ))
+            })?
+        };
+        if !status.is_success() {
+            return Err(classify_api_error(
+                status,
+                &result_json,
+                &self.api_key,
+            ));
+        }
+        Ok(result_json.get("data").cloned().unwrap_or(Value::Null))
+    }
+
     /// Fetch `path` and return the JSON `data` field.
     ///
     /// The API key is sent as a query parameter and is stripped from error text.
@@ -116,6 +177,54 @@ impl NaClient {
                 &result,
                 &self.api_key,
             )),
+        }
+    }
+}
+
+pub(crate) fn form_body<T: Serialize>(body: &T) -> Result<Vec<u8>, NaApiError> {
+    let value = serde_json::to_value(body)
+        .map_err(|err| NaApiError::Deserialize(format!("form body: {err}")))?;
+    Ok(form_encode(&value)?.into_bytes())
+}
+
+fn form_encode(value: &Value) -> Result<String, NaApiError> {
+    let Some(object) = value.as_object() else {
+        return Err(NaApiError::Deserialize(
+            "form body must be a JSON object".into(),
+        ));
+    };
+    let mut url =
+        reqwest::Url::parse("http://form.invalid/").expect("static url");
+    for (key, item) in object {
+        append_form_value(&mut url, key, item);
+    }
+    Ok(url.query().unwrap_or("").to_string())
+}
+
+fn append_form_value(url: &mut reqwest::Url, key: &str, item: &Value) {
+    match item {
+        Value::Null => {}
+        Value::Bool(flag) => {
+            url.query_pairs_mut()
+                .append_pair(key, if *flag { "1" } else { "0" });
+        }
+        Value::Number(number) => {
+            url.query_pairs_mut().append_pair(key, &number.to_string());
+        }
+        Value::String(text) => {
+            url.query_pairs_mut().append_pair(key, text);
+        }
+        Value::Array(items) if items.is_empty() => {
+            url.query_pairs_mut().append_pair(&format!("{key}[]"), "");
+        }
+        Value::Array(items) => {
+            let item_key = format!("{key}[]");
+            for item in items {
+                append_form_value(url, &item_key, item);
+            }
+        }
+        Value::Object(_) => {
+            url.query_pairs_mut().append_pair(key, &item.to_string());
         }
     }
 }
@@ -224,6 +333,24 @@ mod tests {
         assert!(url.as_str().contains("mbpkgid=5"));
         assert!(url.as_str().contains("key=a%26b"));
         assert!(!url.as_str().contains("key=a&b"));
+    }
+
+    #[test]
+    fn form_encode_skips_null_and_uses_one_or_zero() {
+        let body = serde_json::json!({
+            "name": "edge",
+            "enabled": true,
+            "draft": false,
+            "skip": null,
+            "tag_list": ["a", "b"]
+        });
+        let encoded = form_encode(&body).unwrap();
+        assert!(encoded.contains("name=edge"), "{encoded}");
+        assert!(encoded.contains("enabled=1"), "{encoded}");
+        assert!(encoded.contains("draft=0"), "{encoded}");
+        assert!(!encoded.contains("skip"), "{encoded}");
+        assert!(encoded.contains("tag_list%5B%5D=a"), "{encoded}");
+        assert!(encoded.contains("tag_list%5B%5D=b"), "{encoded}");
     }
 
     #[test]

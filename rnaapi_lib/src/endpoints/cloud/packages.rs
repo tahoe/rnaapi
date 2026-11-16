@@ -3,7 +3,7 @@
 // under the GNU General Public License v3.0
 use serde::{Deserialize, Serialize};
 
-use crate::{EndpointGetAll, EndpointGetOne};
+use crate::{EndpointGetAll, EndpointGetOne, EndpointWrite};
 
 #[derive(
     Clone,
@@ -13,10 +13,12 @@ use crate::{EndpointGetAll, EndpointGetOne};
     Deserialize,
     EndpointGetOne,
     EndpointGetAll,
+    EndpointWrite,
 )]
 #[serde(rename_all = "snake_case")]
 #[getone(path = "cloud/package/{}", id: u32)]
 #[getall(path = "cloud/packages")]
+#[write(post, name = "cancel", path = "cloud/package/cancel/", body: CancelPackage, returns = serde_json::Value)]
 pub struct Package {
     pub mbpkgid: u32,
     pub package_status: String,
@@ -36,4 +38,17 @@ pub struct Package {
     pub uptime: String,
     pub os: String,
     pub is_building: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CancelPackage {
+    pub mbpkgid: i64,
+    #[serde(rename = "domU_package", skip_serializing_if = "Option::is_none")]
+    pub domu_package: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comments: Option<String>,
+    pub cancel_type: String,
+    pub agree: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
 }

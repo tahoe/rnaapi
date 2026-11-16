@@ -3,7 +3,7 @@
 // under the GNU General Public License v3.0
 use serde::{Deserialize, Serialize};
 
-use crate::{EndpointGetAll, EndpointGetOne};
+use crate::{EndpointGetAll, EndpointGetOne, EndpointWrite};
 
 use super::flex;
 
@@ -15,10 +15,20 @@ use super::flex;
     Deserialize,
     EndpointGetOne,
     EndpointGetAll,
+    EndpointWrite,
 )]
 #[serde(rename_all = "snake_case")]
 #[getone(path = "firewall/sets/{}", id: u32)]
 #[getall(path = "firewall/sets")]
+#[write(post, form, name = "create", path = "firewall/sets", body: FirewallSetBody)]
+#[write(put, form, name = "update", path = "firewall/sets/{}", id: u32, body: FirewallSetBody)]
+#[write(delete, name = "delete", path = "firewall/sets/{}", id: u32, returns = ())]
+#[write(put, form, name = "enable", path = "firewall/sets/{}/enable", id: u32, returns = ())]
+#[write(put, form, name = "disable", path = "firewall/sets/{}/disable", id: u32, returns = ())]
+#[write(post, form, name = "create_draft", path = "firewall/sets/{}/create-draft", id: u32)]
+#[write(post, form, name = "publish_draft", path = "firewall/sets/publish-draft/{}", draft_id: u32)]
+#[write(delete, name = "delete_draft", path = "firewall/sets/delete-draft/{}", draft_id: u32, returns = ())]
+#[write(post, form, name = "sync_rules", path = "firewall/sets/{}/vm/sync-all", set_id: u32, returns = ())]
 pub struct FirewallSet {
     pub id: i64,
     pub name: String,
@@ -64,10 +74,15 @@ pub struct FirewallMatchCriteria {
     Deserialize,
     EndpointGetOne,
     EndpointGetAll,
+    EndpointWrite,
 )]
 #[serde(rename_all = "snake_case")]
 #[getone(path = "firewall/sets/{}/rules/{}", set_id: u32, rule_id: u32)]
 #[getall(path = "firewall/sets/{}/rules", set_id: u32)]
+#[write(post, name = "create", path = "firewall/sets/{}/rules", set_id: u32, body: FirewallRuleBody)]
+#[write(put, name = "update", path = "firewall/{}/{}", set_id: u32, rule_id: u32, body: FirewallRuleBody)]
+#[write(delete, name = "delete", path = "firewall/{}/rules/{}", set_id: u32, rule_id: u32, returns = ())]
+#[write(post, name = "reorder", path = "firewall/sets/{}/rules/re-order", set_id: u32, body: ReorderFirewallRules, returns = ())]
 pub struct FirewallRule {
     pub id: i64,
     #[serde(deserialize_with = "flex::int")]
@@ -112,9 +127,21 @@ pub struct FirewallManageEnabled {
     pub enabled: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    EndpointGetAll,
+    EndpointWrite,
+)]
 #[serde(rename_all = "snake_case")]
 #[getall(path = "firewall/sets/{}/vm-list", set_id: u32)]
+#[write(post, name = "attach", path = "firewall/sets/{}/vm/attach", set_id: u32, body: AttachFirewallVms, returns = Vec<FirewallSetVm>)]
+#[write(post, form, name = "detach", path = "firewall/sets/{}/vm/detach/{}", set_id: u32, mbpkgid: u32, returns = ())]
+#[write(post, form, name = "detach_relation", path = "firewall/sets/vm/detach/{}", relation_id: u32, returns = ())]
+#[write(post, form, name = "detach_all", path = "firewall/sets/{}/vm/detach-all", set_id: u32, returns = ())]
 pub struct FirewallSetVm {
     #[serde(deserialize_with = "flex::int")]
     pub id: i64,
@@ -144,3 +171,45 @@ pub struct FirewallAvailableVms(pub Vec<FirewallSetVm>);
 #[serde(transparent)]
 #[getone(path = "firewall/sets/vm/{}/related", mbpkgid: u32)]
 pub struct FirewallRelatedVms(pub Vec<FirewallSetVm>);
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FirewallSetBody {
+    pub name: String,
+    pub description: String,
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FirewallRuleBody {
+    pub ip_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+    pub action: String,
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rule_priority: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub admin_comment: Option<String>,
+    pub match_criteria: Option<FirewallMatchCriteria>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReorderFirewallRules {
+    pub move_id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_id: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AttachFirewallVm {
+    pub mbpkgid: i64,
+    pub interface_id: i64,
+    pub set_priority: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AttachFirewallVms {
+    pub vm_list: Vec<AttachFirewallVm>,
+}

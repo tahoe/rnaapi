@@ -56,7 +56,8 @@ mod shape_tests {
                 "status": "ok"
             }
         });
-        let packages: ColocationPackages = serde_json::from_value(body).unwrap();
+        let packages: ColocationPackages =
+            serde_json::from_value(body).unwrap();
         assert_eq!(packages.0["10"].mbpkgid, 10);
     }
 

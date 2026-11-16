@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{EndpointGetAll, EndpointGetOne};
+use crate::{EndpointGetAll, EndpointGetOne, EndpointWrite};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
 #[serde(rename_all = "snake_case")]
@@ -91,10 +91,23 @@ pub struct DedicatedDeviceOs(pub Vec<DedicatedOsProfile>);
     Deserialize,
     EndpointGetOne,
     EndpointGetAll,
+    EndpointWrite,
 )]
 #[serde(rename_all = "snake_case")]
 #[getone(path = "dedicated/servers/{}", id: u32)]
 #[getall(path = "dedicated/servers")]
+#[write(post, name = "deploy", path = "dedicated/server/build/{}", mbpkgid: u32, body: DedicatedBuild, returns = MetalBuild)]
+#[write(post, form, name = "buy", path = "dedicated/server/buy/{}", device_id: u32, returns = MetalBuild)]
+#[write(post, name = "buy_and_deploy", path = "dedicated/server/buy_build/{}", device_id: u32, body: DedicatedBuild, returns = MetalBuild)]
+#[write(post, form, name = "provision", path = "dedicated/server/buy_build", body: ProvisionMetal, returns = MetalBuild)]
+#[write(post, form, name = "rebuild", path = "dedicated/server/re_build/{}", id: u32, body: ProvisionMetal, returns = MetalBuild)]
+#[write(put, name = "update_ipv4_reverse", path = "dedicated/server/ipv4_reverse", body: DedicatedIpv4Reverse, returns = ())]
+#[write(post, json, name = "soft_reset", path = "dedicated/server/soft-reset/{}", mbpkgid: u32, returns = ())]
+#[write(post, name = "delete", path = "dedicated/server/{}/delete", mbpkgid: u32, body: DedicatedAction, returns = ())]
+#[write(post, name = "reboot", path = "dedicated/server/{}/reboot", mbpkgid: u32, body: DedicatedAction, returns = ())]
+#[write(post, name = "shutdown", path = "dedicated/server/{}/shutdown", mbpkgid: u32, body: DedicatedAction, returns = ())]
+#[write(post, name = "start", path = "dedicated/server/{}/start", mbpkgid: u32, body: DedicatedAction, returns = ())]
+#[write(post, name = "power_status", path = "dedicated/server/{}/status", mbpkgid: u32, body: DedicatedAction, returns = serde_json::Value)]
 pub struct MetalServer {
     pub id: i64,
     pub datacenter_id: i64,
@@ -130,6 +143,68 @@ pub struct MetalServer {
     pub package_status: String,
     #[serde(default)]
     pub building: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MetalBuild {
+    pub mbpkgid: i64,
+    pub status: String,
+    pub build: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DedicatedBuild {
+    pub fqdn: String,
+    pub profile: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disklayout: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_key_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_script: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ProvisionMetal {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_key_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_script: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disklayout: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fqdn: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mbpkgid: Option<i64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DedicatedAction {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub force: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DedicatedIpv4Reverse {
+    pub mbpkgid: i64,
+    pub id: i64,
+    pub reverse: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]

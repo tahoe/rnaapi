@@ -3,7 +3,7 @@
 // under the GNU General Public License v3.0
 use serde::{Deserialize, Serialize};
 
-use crate::{EndpointGetAll, EndpointGetOne};
+use crate::{EndpointGetAll, EndpointGetOne, EndpointWrite};
 
 #[derive(
     Clone,
@@ -13,10 +13,15 @@ use crate::{EndpointGetAll, EndpointGetOne};
     Deserialize,
     EndpointGetOne,
     EndpointGetAll,
+    EndpointWrite,
 )]
 #[serde(rename_all = "snake_case")]
 #[getone(path = "cloud/images/{}", id: u32)]
 #[getall(path = "cloud/images")]
+#[write(post, form, name = "create", path = "cloud/images/create", body: CreateImage, returns = ImageJob)]
+#[write(patch, name = "edit", path = "cloud/images/{}/edit", id: u32, body: EditImage, returns = ())]
+#[write(delete, name = "delete", path = "cloud/images/{}/delete", id: u32, returns = ImageJob)]
+#[write(post, name = "replace", path = "cloud/images/{}/replace_image", id: u32, body: ReplaceImage, returns = serde_json::Value)]
 pub struct Image {
     pub id: u32,
     pub os: Option<String>,
@@ -65,4 +70,30 @@ pub struct ImageQueueStatus {
     pub mb_pkgid: i64,
     pub fqdn: String,
     pub os: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CreateImage {
+    pub mbpkgid: i64,
+    pub image_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keep_ssh_userdirs: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EditImage {
+    pub os: String,
+    pub description: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReplaceImage {
+    pub replace_id: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ImageJob {
+    pub queue_id: i64,
 }

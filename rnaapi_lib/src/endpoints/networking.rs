@@ -3,7 +3,7 @@
 // under the GNU General Public License v3.0
 use serde::{Deserialize, Serialize};
 
-use crate::{EndpointGetAll, EndpointGetOne};
+use crate::{EndpointGetAll, EndpointGetOne, EndpointWrite};
 
 use super::flex;
 
@@ -48,9 +48,20 @@ pub struct ProvisionedLocation {
 #[getone(path = "cloud/networking/locations/{}/vlans", location_id: u32)]
 pub struct LocationVlans(pub Vec<Vlan>);
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    EndpointGetAll,
+    EndpointWrite,
+)]
 #[serde(rename_all = "snake_case")]
 #[getall(path = "cloud/networking/nics/{}", mbpkgid: u32)]
+#[write(post, name = "attach", path = "cloud/networking/nics/{}", mbpkgid: u32, body: AttachServerNic)]
+#[write(put, name = "update", path = "cloud/networking/nics/{}", nic_id: u32, body: UpdateServerNic)]
+#[write(delete, name = "detach", path = "cloud/networking/nics/{}?mbpkgid={}", nic_id: u32, mbpkgid: u32, returns = ())]
 pub struct ServerNic {
     #[serde(default, deserialize_with = "flex::int")]
     pub id: i64,
@@ -61,5 +72,17 @@ pub struct ServerNic {
     #[serde(default, deserialize_with = "flex::int")]
     pub customer_vlan_id: i64,
     #[serde(default, deserialize_with = "flex::int")]
+    pub attach_order: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AttachServerNic {
+    pub customer_vlan_id: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UpdateServerNic {
+    pub mbpkgid: i64,
+    pub customer_vlan_id: i64,
     pub attach_order: i64,
 }

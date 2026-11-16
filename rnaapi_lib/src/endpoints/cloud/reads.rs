@@ -3,7 +3,8 @@
 // under the GNU General Public License v3.0
 use serde::{Deserialize, Serialize};
 
-use crate::{EndpointGetAll, EndpointGetOne};
+use crate::errors::NaApiError;
+use crate::{EndpointGetAll, EndpointGetOne, EndpointWrite, NaClient};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
 #[serde(rename_all = "snake_case")]
@@ -135,9 +136,18 @@ pub struct ServerBuildStatus {
     pub response: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    EndpointGetOne,
+    EndpointWrite,
+)]
 #[serde(rename_all = "snake_case")]
 #[getone(path = "cloud/contract/usage")]
+#[write(post, name = "create", path = "cloud/contract/usage", body: CreateUsageContract)]
 pub struct ContractUsage {
     pub id: Option<i64>,
     pub contract_mbpkgid: Option<i64>,
@@ -257,3 +267,42 @@ pub struct ServerDisks(pub serde_json::Value);
 #[serde(transparent)]
 #[getone(path = "cloud/storage-locations")]
 pub struct StorageLocations(pub serde_json::Value);
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CreateUsageContract {
+    pub mb_id: i64,
+}
+
+/// Uploads a cloud-init file. The write derive sends JSON or form fields, and this call is a file upload.
+pub struct CloudInit;
+
+impl CloudInit {
+    pub async fn parse(
+        client: &NaClient, filename: &str, file: &[u8],
+    ) -> Result<serde_json::Value, NaApiError> {
+        if filename.contains(['"', '\r', '\n', '\\']) {
+            return Err(NaApiError::Request(
+                "cloud-init filename contains a character that cannot be sent"
+                    .into(),
+            ));
+        }
+        let boundary = "rnaapi-cloud-init";
+        let mut body = Vec::new();
+        body.extend(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+            )
+            .into_bytes(),
+        );
+        body.extend(file);
+        body.extend(format!("\r\n--{boundary}--\r\n").into_bytes());
+        client
+            .send_data(
+                "POST",
+                "cloud/parse-cloud-init",
+                Some(&format!("multipart/form-data; boundary={boundary}")),
+                Some(body),
+            )
+            .await
+    }
+}
