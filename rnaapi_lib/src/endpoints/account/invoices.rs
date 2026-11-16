@@ -9,9 +9,7 @@ use crate::NaApiError;
 use crate::{EndpointGetAll, EndpointGetArgs, NaClient};
 use async_trait::async_trait;
 
-///
-/// Account Details #[derive(Debug)]
-///
+/// Account invoices.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
 #[serde(rename_all = "snake_case")]
 #[getall(path = "account/invoices", args = 0)]

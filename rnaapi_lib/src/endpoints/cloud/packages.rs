@@ -9,6 +9,7 @@ use crate::{EndpointGetAll, EndpointGetArgs, NaClient};
 use async_trait::async_trait;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
+#[serde(rename_all = "snake_case")]
 #[getall(path = "cloud/packages", args = 0)]
 pub struct Package {
     pub mbpkgid: u32,

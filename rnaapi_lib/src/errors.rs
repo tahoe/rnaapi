@@ -12,4 +12,12 @@ pub enum NaApiError {
     APIKeyInvalid(String),
     #[error("{0}")]
     UnknownError(String),
+    #[error("{0}")]
+    Config(String),
+    #[error("{0}")]
+    Request(String),
+    #[error("{0}")]
+    Api(String),
+    #[error("{0}")]
+    Deserialize(String),
 }

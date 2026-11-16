@@ -8,9 +8,7 @@ use crate::NaApiError;
 use crate::{EndpointGetAll, EndpointGetArgs, EndpointGetOne, NaClient};
 use async_trait::async_trait;
 
-///
-/// Account Details #[derive(Debug)]
-///
+/// SSH public keys stored on the account.
 #[derive(
     Clone,
     Debug,

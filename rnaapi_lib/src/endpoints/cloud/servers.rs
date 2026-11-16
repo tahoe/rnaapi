@@ -114,8 +114,8 @@ pub struct IPv6 {
 }
 
 //
-// SrvrMonthlyBw struct
-// URL: https://vapi2.netactuate.com/api/cloud/ipv4?mbpkgid=<mbpkgid>&key=<api_key>
+// Monthly bandwidth for one server.
+// URL: https://vapi2.netactuate.com/api/cloud/servermonthlybw/{mbpkgid}
 //
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
 #[serde(rename_all = "snake_case")]

@@ -1,5 +1,3 @@
-//use proc_macro::TokenStream;
-//use rnahelpers::EndpointGetArgs;
 use syn::DeriveInput;
 
 #[derive(deluxe::ExtractAttributes)]
@@ -16,159 +14,138 @@ struct EndpointGetAllAttrs {
     args: u32,
 }
 
-fn impl_endpointgetall_trait(
-    item: proc_macro2::TokenStream,
-) -> deluxe::Result<proc_macro2::TokenStream> {
-    // get struct identifier
-    let mut ast: DeriveInput = syn::parse2(item)?;
+fn placeholder_count(path: &str) -> usize {
+    path.matches("{}").count()
+}
 
-    // get the attributes (required)
-    let EndpointGetAllAttrs { path, args } =
-        deluxe::extract_attributes(&mut ast)?;
-    let ident = ast.ident;
+fn check_path(
+    path: &str, args: u32, span: proc_macro2::Span,
+) -> deluxe::Result<()> {
+    if args > 2 {
+        return Err(syn::Error::new(span, "args must be 0, 1, or 2"));
+    }
+    let placeholders = placeholder_count(path);
+    if placeholders != args as usize {
+        return Err(syn::Error::new(
+            span,
+            format!(
+                "path `{path}` has {placeholders} `{{}}` placeholders but args = {args}"
+            ),
+        ));
+    }
+    Ok(())
+}
 
-    if args == 0 {
-        Ok(quote::quote! {
-            #[async_trait]
-            impl EndpointGetAll for #ident {
-                type Endpoint = #ident;
-                async fn get_all(
-                    na_client: &NaClient, args: EndpointGetArgs
-                ) -> Result<Vec<#ident>, NaApiError> {
-                    match args {
-                        EndpointGetArgs::NoArgs => {
-                            let data = na_client.get_data(&format!(#path)).await?;
-                            let results: Vec<#ident> = serde_json::from_value(data).unwrap();
-                            Ok(results)
-                        }
-                        _ => Err(NaApiError::UnknownError(
-                                "No args Allowed".to_owned(),
-                        ))
-                    }
+fn parse_body(ident: &syn::Ident, list: bool) -> proc_macro2::TokenStream {
+    if list {
+        quote::quote! {
+            let results: Vec<#ident> = ::serde_json::from_value(data).map_err(|err| {
+                NaApiError::Deserialize(err.to_string())
+            })?;
+            Ok(results)
+        }
+    } else {
+        quote::quote! {
+            let result: #ident = ::serde_json::from_value(data).map_err(|err| {
+                NaApiError::Deserialize(err.to_string())
+            })?;
+            Ok(result)
+        }
+    }
+}
+
+fn fetch_match(
+    args: u32, path: &str, body: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    match args {
+        0 => quote::quote! {
+            match args {
+                EndpointGetArgs::NoArgs => {
+                    let data = na_client.get_data(&format!(#path)).await?;
+                    #body
                 }
+                _ => Err(NaApiError::UnknownError(
+                    "no arguments allowed".to_owned(),
+                )),
             }
-        })
-    } else if args == 1 {
+        },
+        1 => quote::quote! {
+            match args {
+                EndpointGetArgs::OneInt(arg1) => {
+                    let data = na_client.get_data(&format!(#path, arg1)).await?;
+                    #body
+                }
+                _ => Err(NaApiError::UnknownError(
+                    "only one argument allowed".to_owned(),
+                )),
+            }
+        },
+        _ => quote::quote! {
+            match args {
+                EndpointGetArgs::TwoInt(arg1, arg2) => {
+                    let data = na_client.get_data(&format!(#path, arg1, arg2)).await?;
+                    #body
+                }
+                _ => Err(NaApiError::UnknownError(
+                    "only two arguments allowed".to_owned(),
+                )),
+            }
+        },
+    }
+}
+
+fn impl_endpoint(
+    item: proc_macro2::TokenStream, list: bool,
+) -> deluxe::Result<proc_macro2::TokenStream> {
+    let mut ast: DeriveInput = syn::parse2(item)?;
+    let (path, args) = if list {
+        let EndpointGetAllAttrs { path, args } =
+            deluxe::extract_attributes(&mut ast)?;
+        (path, args)
+    } else {
+        let EndpointGetOneAttrs { path, args } =
+            deluxe::extract_attributes(&mut ast)?;
+        (path, args)
+    };
+    check_path(&path, args, ast.ident.span())?;
+    let ident = &ast.ident;
+    let fetch = fetch_match(args, &path, parse_body(ident, list));
+
+    if list {
         Ok(quote::quote! {
             #[async_trait]
             impl EndpointGetAll for #ident {
                 type Endpoint = #ident;
                 async fn get_all(
-                    na_client: &NaClient, args: EndpointGetArgs
+                    na_client: &NaClient,
+                    args: EndpointGetArgs,
                 ) -> Result<Vec<#ident>, NaApiError> {
-                    match args {
-                        EndpointGetArgs::OneInt(arg1) => {
-                            let data = na_client.get_data(&format!(#path, arg1)).await?;
-                            let results: Vec<#ident> = serde_json::from_value(data).unwrap();
-                            Ok(results)
-                        }
-                        _ => Err(NaApiError::UnknownError(
-                                "Only one arg Allowed".to_owned(),
-                        ))
-                    }
+                    #fetch
                 }
             }
         })
     } else {
         Ok(quote::quote! {
             #[async_trait]
-            impl EndpointGetAll for #ident {
+            impl EndpointGetOne for #ident {
                 type Endpoint = #ident;
-                async fn get_all(
-                    na_client: &NaClient, args: EndpointGetArgs
-                ) -> Result<Vec<#ident>, NaApiError> {
-                    match args {
-                        EndpointGetArgs::TwoInt(arg1, arg2) => {
-                            let data = na_client.get_data(&format!(#path, arg1, arg2)).await?;
-                            let results: Vec<#ident> = serde_json::from_value(data).unwrap();
-                            Ok(results)
-                        }
-                        _ => Err(NaApiError::UnknownError(
-                                "Only two args Allowed".to_owned(),
-                        ))
-                    }
+                async fn get_one(
+                    na_client: &NaClient,
+                    args: EndpointGetArgs,
+                ) -> Result<#ident, NaApiError> {
+                    #fetch
                 }
             }
         })
     }
 }
 
-fn impl_endpointgetone_trait(
-    item: proc_macro2::TokenStream,
-) -> deluxe::Result<proc_macro2::TokenStream> {
-    // get struct identifier
-    let mut ast: DeriveInput = syn::parse2(item)?;
-
-    // get the attributes (required)
-    let EndpointGetOneAttrs { path, args } =
-        deluxe::extract_attributes(&mut ast)?;
-    let ident = ast.ident;
-
-    // generate impl
-
-    if args == 0 {
-        Ok(quote::quote! {
-            #[async_trait]
-            impl EndpointGetOne for #ident {
-                type Endpoint = #ident;
-                async fn get_one(
-                    na_client: &NaClient, args: EndpointGetArgs
-                ) -> Result<#ident, NaApiError> {
-                    match args {
-                        EndpointGetArgs::NoArgs => {
-                            let data = na_client.get_data(&format!(#path)).await?;
-                            let result: #ident = serde_json::from_value(data).unwrap();
-                            Ok(result)
-                        }
-                        _ => Err(NaApiError::UnknownError(
-                                "No args Allowed".to_owned(),
-                        ))
-                    }
-                }
-            }
-        })
-    } else if args == 1 {
-        Ok(quote::quote! {
-            #[async_trait]
-            impl EndpointGetOne for #ident {
-                type Endpoint = #ident;
-                async fn get_one(
-                    na_client: &NaClient, args: EndpointGetArgs
-                ) -> Result<#ident, NaApiError> {
-                    match args {
-                        EndpointGetArgs::OneInt(arg1) => {
-                            let data = na_client.get_data(&format!(#path, arg1)).await?;
-                            let result: #ident = serde_json::from_value(data).unwrap();
-                            Ok(result)
-                        }
-                        _ => Err(NaApiError::UnknownError(
-                                "Only one arg Allowed".to_owned(),
-                        ))
-                    }
-                }
-            }
-        })
-    } else {
-        Ok(quote::quote! {
-            #[async_trait]
-            impl EndpointGetOne for #ident {
-                type Endpoint = #ident;
-                async fn get_one(
-                    na_client: &NaClient, args: EndpointGetArgs
-                ) -> Result<#ident, NaApiError> {
-                    match args {
-                        EndpointGetArgs::TwoInt(arg1, arg2) => {
-                            let data = na_client.get_data(&format!(#path, arg1, arg2)).await?;
-                            let result: #ident = serde_json::from_value(data).unwrap();
-                            Ok(result)
-                        }
-                        _ => Err(NaApiError::UnknownError(
-                                "Only two args Allowed".to_owned(),
-                        ))
-                    }
-                }
-            }
-        })
+fn expand(
+    item: proc_macro::TokenStream, list: bool,
+) -> proc_macro::TokenStream {
+    match impl_endpoint(item.into(), list) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.into_compile_error().into(),
     }
 }
 
@@ -176,14 +153,12 @@ fn impl_endpointgetone_trait(
 pub fn endpointgetone_derive_macro(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    // generate
-    impl_endpointgetone_trait(item.into()).unwrap().into()
+    expand(item, false)
 }
 
 #[proc_macro_derive(EndpointGetAll, attributes(getall))]
 pub fn endpointgetall_derive_macro(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    // generate
-    impl_endpointgetall_trait(item.into()).unwrap().into()
+    expand(item, true)
 }

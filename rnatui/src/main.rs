@@ -1,458 +1,463 @@
-//! Example rust app using the NetActuate API rust library
-//!
-//! This app is mainly for testing and is just an example
-//!
-//! # Usage
-//! ### Set ENVs
+//! CLI for the NetActuate API, built on the `rnaapi` crate.
 //!
 //! ```bash
 //! export API_KEY='<your api key>'
-//! export API_ADDRESS='https://vapi2.netactuate.com/api/cloud'
+//! # optional; defaults to https://vapi2.netactuate.com/api/
+//! export API_ADDRESS='https://vapi2.netactuate.com/api/'
 //! ```
 //!
-//! ### Install example client
-//! ```rust
-//! cargo install rnaapi
+//! ```text
+//! rnatui get server
+//! rnatui get server -m <mbpkgid>
 //! ```
-//!
-//! ### There are two forms of output, all server info or a single server's info
-//!
-//! #### All servers info
-//! `rnaapi`
-//!
-//! ## A single servers info
-//! `rnaapi -m <mbpkgid>`
-//!
-//! That's it.
 //!
 // Copyright (C) 2025 Dennis Durling
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
 use clap::{CommandFactory, Parser};
 use clap_complete::generate;
-use rnaapi::NaClient;
 use rnaapi::config::Settings;
-use rnaapi::endpoints;
-use rnaapi::{EndpointGetAll, EndpointGetArgs, EndpointGetOne};
+use rnaapi::endpoints::{self, MonthlyBw};
+use rnaapi::{EndpointGetAll, EndpointGetArgs, EndpointGetOne, NaClient};
 use rnatui::commands::get_pub_key;
 use rnatui::commands::{Cli, Commands, GetCommands};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    //! Test/Example "main" function, right now it just takes
-    //! one argument, `-m <mbpkgid>` if not given, returns all the servers you own
-
-    // Get settings from config
-    let settings = Settings::new()?;
-
-    // Defaults
-    let mut ssh_keyid: u32 = 0;
-    let mut display_count: usize = 0;
-    let mut loc_mbpkgid: u32 = 0;
-    let mut loc_jobid: u32 = 0;
-    let mut loc_zoneid: u32 = 0;
-    let mut loc_sizes: u32 = 0;
-    let mut command: &str = "default";
-
-    // parse our args into args
     let cli = Cli::parse();
-
-    // check cli sub commands
-    match &cli.cmd {
+    match cli.cmd {
         Some(Commands::GenerateCompletions { shell }) => {
             let mut app = Cli::command();
-            let appclone = app.clone();
-            generate(
-                *shell,
-                &mut app,
-                appclone.get_name().to_string(),
-                &mut std::io::stdout(),
-            );
+            let name = app.get_name().to_string();
+            generate(shell, &mut app, name, &mut std::io::stdout());
+            Ok(())
         }
         Some(Commands::Get { cmd }) => match cmd {
-            GetCommands::Server { mbpkgid } => {
-                if *mbpkgid >= 1 {
-                    loc_mbpkgid = *mbpkgid;
-                    command = "server";
-                } else {
-                    command = "server";
-                }
+            GetCommands::Pubkey { file } => {
+                let pubkey = get_pub_key(&file)?;
+                println!("PubKey for {file} is: {pubkey}");
+                Ok(())
             }
-            GetCommands::Dns { id } => {
-                if *id >= 1 {
-                    loc_zoneid = *id;
-                    command = "dns";
-                } else {
-                    command = "dns";
-                }
-            }
-            GetCommands::Ssh { id } => {
-                if *id >= 1 {
-                    ssh_keyid = *id;
-                    command = "ssh";
-                } else {
-                    command = "ssh";
-                }
-            }
-            GetCommands::Job { mbpkgid, jobid } => {
-                if *mbpkgid >= 1 {
-                    loc_mbpkgid = *mbpkgid;
-                    command = "job";
-                    if *jobid >= 1 {
-                        loc_jobid = *jobid;
-                    }
-                }
-            }
-            GetCommands::Ip { mbpkgid } => {
-                if *mbpkgid >= 1 {
-                    loc_mbpkgid = *mbpkgid;
-                    command = "ip";
-                }
-            }
-            GetCommands::Bandwidth { mbpkgid } => {
-                if *mbpkgid >= 1 {
-                    loc_mbpkgid = *mbpkgid;
-                    command = "bandwidth";
-                }
-            }
-            GetCommands::Invoice { count } => {
-                display_count = *count;
-                command = "invoice";
-            }
-            GetCommands::Sizes { id } => {
-                loc_sizes = *id;
-                command = "sizes";
-            }
-            GetCommands::Location {} => {
-                command = "location";
-            }
-            GetCommands::Image {} => {
-                command = "image";
-            }
-            GetCommands::Account {} => {
-                command = "account";
-            }
-            GetCommands::Pubkey {} => {
-                let pubkey = get_pub_key("butter_rsa.pub");
-                println!("PubKey for butter_rsa.pub is: {}", pubkey.unwrap());
-            }
+            other => dispatch(other).await,
         },
-        _ => {}
+        None => Ok(()),
     }
-    // playing with new constructor for client
-    // let na_client = NaClient::new(API_KEY.to_owned(), API_ADDRESS.to_owned()).await;
+}
+
+async fn dispatch(cmd: GetCommands) -> Result<()> {
+    let settings = Settings::new()?;
     let na_client = NaClient::new(settings.api_key, settings.api_url).await?;
-
-    if command == "server" {
-        if loc_mbpkgid > 0 {
-            // submit jobs to the tokio async runtime
-            // this automatically awaits so no need for .await
-            let (server, srvjobs, ipv4s, ipv6s, status, bw_usage) = tokio::join!(
-                endpoints::Server::get_one(
-                    &na_client,
-                    EndpointGetArgs::OneInt(loc_mbpkgid)
-                ),
-                endpoints::SrvJob::get_all(
-                    &na_client,
-                    EndpointGetArgs::OneInt(loc_mbpkgid)
-                ),
-                endpoints::IPv4::get_all(
-                    &na_client,
-                    EndpointGetArgs::OneInt(loc_mbpkgid)
-                ),
-                endpoints::IPv6::get_all(
-                    &na_client,
-                    EndpointGetArgs::OneInt(loc_mbpkgid)
-                ),
-                endpoints::SrvStatus::get_one(
-                    &na_client,
-                    EndpointGetArgs::OneInt(loc_mbpkgid)
-                ),
-                endpoints::MonthlyBw::get_all(
-                    &na_client,
-                    EndpointGetArgs::OneInt(loc_mbpkgid),
-                ),
-            );
-
-            // print basic server info
-            if let Ok(srv) = server {
-                println!(
-                    "Package: {}, fqdn: {}, mbpkgid: {}",
-                    srv.domu_package, srv.fqdn, srv.mbpkgid
-                );
-            }
-
-            println!();
-            // print the job data
-            if let Ok(jobs) = srvjobs {
-                for job in jobs {
-                    println!(
-                        "Inserted: {}, Status: {}, command: {}",
-                        job.ts_insert, job.status, job.command
-                    );
-                }
-            }
-
-            println!();
-            // print IPv4 Addresses
-            if let Ok(ip4s) = ipv4s {
-                for ipv4 in ip4s {
-                    println!(
-                        "Reverse: {}, IP: {}, Gateway: {}",
-                        ipv4.reverse, ipv4.ip, ipv4.gateway
-                    );
-                }
-            }
-
-            println!();
-            // print IPv6 Addresses
-            if let Ok(ip6s) = ipv6s {
-                for ipv6 in ip6s {
-                    println!(
-                        "Reverse: {}, IP: {}, Gateway: {}",
-                        ipv6.reverse, ipv6.ip, ipv6.gateway
-                    );
-                }
-            }
-
-            println!();
-            // print server status, very unverbose
-            if let Ok(stat) = status {
-                println!("Status: {}", stat.status);
-            }
-
-            // print out bandwidth usage
-            println!();
-            if let Ok(mut bwusage) = bw_usage {
-                bwusage.sort_by_key(|b| {
-                    let date_with_day = format!("{}-01", b.date);
-                    NaiveDate::parse_from_str(&date_with_day, "%Y-%m-%d")
-                        .expect("Failed to parse date")
-                });
-                for usage in bwusage {
-                    println!(
-                        "Date: {}, Rx: {}, Tx: {}",
-                        usage.date, usage.rx, usage.tx
-                    );
-                }
-            }
-        } else {
-            let srvrs =
-                endpoints::Server::get_all(&na_client, EndpointGetArgs::NoArgs)
-                    .await?;
-
-            for srvr in srvrs {
-                println!("ID: {}, fqdn: {}", srvr.mbpkgid, srvr.fqdn);
-            }
+    match cmd {
+        GetCommands::Pubkey { .. } => {
+            bail!("public key lookup does not use the API");
         }
-    } else if command == "dns" {
-        if loc_zoneid > 0 {
-            println!();
-            // // print out the zone name
-            let zone = endpoints::Zone::get_one(
-                &na_client,
-                EndpointGetArgs::OneInt(loc_zoneid),
-            )
-            .await?;
-            println!("Zone: {}", zone.name);
+        GetCommands::Server { mbpkgid } => {
+            print_server(&na_client, mbpkgid).await
+        }
+        GetCommands::Dns { id } => print_dns(&na_client, id).await,
+        GetCommands::Ssh { id } => print_ssh(&na_client, id).await,
+        GetCommands::Job { mbpkgid, jobid } => {
+            print_job(&na_client, mbpkgid, jobid).await
+        }
+        GetCommands::Ip { mbpkgid } => print_ips(&na_client, mbpkgid).await,
+        GetCommands::Bandwidth { mbpkgid } => {
+            print_bandwidth(&na_client, mbpkgid).await
+        }
+        GetCommands::Invoice { count } => {
+            print_invoices(&na_client, count).await
+        }
+        GetCommands::Sizes { id } => print_sizes(&na_client, id).await,
+        GetCommands::Location {} => print_locations(&na_client).await,
+        GetCommands::Image {} => print_images(&na_client).await,
+        GetCommands::Account {} => print_account(&na_client).await,
+    }
+}
 
-            // print out the SOA for the zone
-            if let Some(soa) = zone.soa {
-                println!("SOA: {}", soa.primary);
-            }
+fn require_id(name: &str, id: u32) -> Result<u32> {
+    if id == 0 {
+        bail!("{name} must be greater than 0");
+    }
+    Ok(id)
+}
 
-            // print out the first record
-            if let Some(recs) = zone.records {
-                println!("1st Record: {}", recs[0].name);
-            }
+fn bandwidth_date(date: &str) -> Result<NaiveDate> {
+    NaiveDate::parse_from_str(&format!("{date}-01"), "%Y-%m-%d")
+        .with_context(|| format!("bandwidth date `{date}` is not YYYY-MM"))
+}
 
-            // print out the first NS record
-            if let Some(nsrecs) = zone.ns {
-                println!("1st NS: {}", nsrecs[0].name)
-            }
-        } else {
-            println!();
-            // list dns zones
-            let zones =
-                endpoints::Zone::get_all(&na_client, EndpointGetArgs::NoArgs)
-                    .await?;
-            for zone in zones {
+fn sort_bandwidth(bw_usage: &mut [MonthlyBw]) -> Result<()> {
+    let mut dated = Vec::with_capacity(bw_usage.len());
+    for usage in bw_usage.iter().cloned() {
+        dated.push((bandwidth_date(&usage.date)?, usage));
+    }
+    dated.sort_by_key(|(date, _)| *date);
+    for (slot, (_, usage)) in bw_usage.iter_mut().zip(dated) {
+        *slot = usage;
+    }
+    Ok(())
+}
+
+async fn print_server(na_client: &NaClient, mbpkgid: u32) -> Result<()> {
+    if mbpkgid == 0 {
+        let servers =
+            endpoints::Server::get_all(na_client, EndpointGetArgs::NoArgs)
+                .await?;
+        for server in servers {
+            println!("ID: {}, fqdn: {}", server.mbpkgid, server.fqdn);
+        }
+        return Ok(());
+    }
+
+    let (server, srvjobs, ipv4s, ipv6s, status, bw_usage) = tokio::join!(
+        endpoints::Server::get_one(na_client, EndpointGetArgs::OneInt(mbpkgid)),
+        endpoints::SrvJob::get_all(na_client, EndpointGetArgs::OneInt(mbpkgid)),
+        endpoints::IPv4::get_all(na_client, EndpointGetArgs::OneInt(mbpkgid)),
+        endpoints::IPv6::get_all(na_client, EndpointGetArgs::OneInt(mbpkgid)),
+        endpoints::SrvStatus::get_one(
+            na_client,
+            EndpointGetArgs::OneInt(mbpkgid)
+        ),
+        endpoints::MonthlyBw::get_all(
+            na_client,
+            EndpointGetArgs::OneInt(mbpkgid)
+        ),
+    );
+
+    let mut failed = false;
+    match server {
+        Ok(srv) => println!(
+            "Package: {}, fqdn: {}, mbpkgid: {}",
+            srv.domu_package, srv.fqdn, srv.mbpkgid
+        ),
+        Err(err) => {
+            eprintln!("server: {err}");
+            failed = true;
+        }
+    }
+
+    println!();
+    match srvjobs {
+        Ok(jobs) => {
+            for job in jobs {
                 println!(
-                    "ID: {}, Size: {}, Name: {}",
-                    zone.id, zone.name, zone.zone_type
+                    "Inserted: {}, Status: {}, command: {}",
+                    job.ts_insert, job.status, job.command
                 );
             }
         }
-    } else if command == "ssh" {
-        if ssh_keyid > 0 {
-            let sshkey = endpoints::SSHKeys::get_one(
-                &na_client,
-                EndpointGetArgs::OneInt(ssh_keyid),
-            )
-            .await?;
-            println!();
-            // print some ssh keys
+        Err(err) => {
+            eprintln!("jobs: {err}");
+            failed = true;
+        }
+    }
+
+    println!();
+    match ipv4s {
+        Ok(addresses) => {
+            for ipv4 in addresses {
+                println!(
+                    "Reverse: {}, IP: {}, Gateway: {}",
+                    ipv4.reverse, ipv4.ip, ipv4.gateway
+                );
+            }
+        }
+        Err(err) => {
+            eprintln!("ipv4: {err}");
+            failed = true;
+        }
+    }
+
+    println!();
+    match ipv6s {
+        Ok(addresses) => {
+            for ipv6 in addresses {
+                println!(
+                    "Reverse: {}, IP: {}, Gateway: {}",
+                    ipv6.reverse, ipv6.ip, ipv6.gateway
+                );
+            }
+        }
+        Err(err) => {
+            eprintln!("ipv6: {err}");
+            failed = true;
+        }
+    }
+
+    println!();
+    match status {
+        Ok(stat) => println!("Status: {}", stat.status),
+        Err(err) => {
+            eprintln!("status: {err}");
+            failed = true;
+        }
+    }
+
+    println!();
+    match bw_usage {
+        Ok(mut usage) => {
+            sort_bandwidth(&mut usage)?;
+            for sample in usage {
+                println!(
+                    "Date: {}, Rx: {}, Tx: {}",
+                    sample.date, sample.rx, sample.tx
+                );
+            }
+        }
+        Err(err) => {
+            eprintln!("bandwidth: {err}");
+            failed = true;
+        }
+    }
+
+    if failed {
+        bail!("one or more server requests failed");
+    }
+    Ok(())
+}
+
+async fn print_dns(na_client: &NaClient, id: u32) -> Result<()> {
+    if id == 0 {
+        println!();
+        let zones =
+            endpoints::Zone::get_all(na_client, EndpointGetArgs::NoArgs)
+                .await?;
+        for zone in zones {
             println!(
-                "ID: {}, Key: {}, Fingerprint: {}",
+                "ID: {}, Name: {}, Type: {}",
+                zone.id, zone.name, zone.zone_type
+            );
+        }
+        return Ok(());
+    }
+
+    println!();
+    let zone = endpoints::Zone::get_one(na_client, EndpointGetArgs::OneInt(id))
+        .await?;
+    println!("Zone: {}", zone.name);
+    if let Some(soa) = &zone.soa {
+        println!("SOA: {}", soa.primary);
+    }
+    if let Some(record) =
+        zone.records.as_ref().and_then(|records| records.first())
+    {
+        println!("1st Record: {}", record.name);
+    }
+    if let Some(ns) = zone.ns.as_ref().and_then(|records| records.first()) {
+        println!("1st NS: {}", ns.name);
+    }
+    Ok(())
+}
+
+async fn print_ssh(na_client: &NaClient, id: u32) -> Result<()> {
+    println!();
+    if id > 0 {
+        let sshkey =
+            endpoints::SSHKeys::get_one(na_client, EndpointGetArgs::OneInt(id))
+                .await?;
+        println!(
+            "ID: {}, Name: {}, Fingerprint: {}",
+            sshkey.id, sshkey.name, sshkey.fingerprint
+        );
+    } else {
+        let keys =
+            endpoints::SSHKeys::get_all(na_client, EndpointGetArgs::NoArgs)
+                .await?;
+        for sshkey in keys {
+            println!(
+                "ID: {}, Name: {}, Fingerprint: {}",
                 sshkey.id, sshkey.name, sshkey.fingerprint
             );
-        } else {
-            let keys = endpoints::SSHKeys::get_all(
-                &na_client,
-                EndpointGetArgs::NoArgs,
-            )
-            .await?;
-            println!();
-            // print some ssh keys
-            for sshkey in keys {
-                println!(
-                    "ID: {}, Key: {}, Fingerprint: {}",
-                    sshkey.id, sshkey.name, sshkey.fingerprint
-                );
-            }
         }
-    } else if command == "job" {
-        if loc_mbpkgid > 0 && loc_jobid > 0 {
-            let job = endpoints::SrvJob::get_one(
-                &na_client,
-                EndpointGetArgs::TwoInt(loc_mbpkgid, loc_jobid),
-            )
-            .await?;
-            println!();
-            // print some ssh keys
+    }
+    Ok(())
+}
+
+async fn print_job(
+    na_client: &NaClient, mbpkgid: u32, jobid: u32,
+) -> Result<()> {
+    require_id("mbpkgid", mbpkgid)?;
+    println!();
+    if jobid > 0 {
+        let job = endpoints::SrvJob::get_one(
+            na_client,
+            EndpointGetArgs::TwoInt(mbpkgid, jobid),
+        )
+        .await?;
+        println!(
+            "ID: {}, Status: {}, Command: {}",
+            job.id, job.status, job.command
+        );
+    } else {
+        let jobs = endpoints::SrvJob::get_all(
+            na_client,
+            EndpointGetArgs::OneInt(mbpkgid),
+        )
+        .await?;
+        for job in jobs {
             println!(
                 "ID: {}, Status: {}, Command: {}",
                 job.id, job.status, job.command
             );
-        } else if loc_mbpkgid > 0 {
-            let jobs = endpoints::SrvJob::get_all(
-                &na_client,
-                EndpointGetArgs::OneInt(loc_mbpkgid),
-            )
-            .await?;
-            println!();
-            // print some ssh keys
-            for job in jobs {
-                println!(
-                    "ID: {}, Status: {}, Command: {}",
-                    job.id, job.status, job.command
-                );
-            }
-        }
-    } else if command == "ip" {
-        if loc_mbpkgid > 0 {
-            let (ipv4s, ipv6s) = tokio::join!(
-                endpoints::IPv4::get_all(
-                    &na_client,
-                    EndpointGetArgs::OneInt(loc_mbpkgid)
-                ),
-                endpoints::IPv6::get_all(
-                    &na_client,
-                    EndpointGetArgs::OneInt(loc_mbpkgid)
-                ),
-            );
-
-            // print IPv4 Addresses
-            if let Ok(ip4s) = ipv4s {
-                for ipv4 in ip4s {
-                    println!(
-                        "Reverse: {}, IP: {}, Gateway: {}",
-                        ipv4.reverse, ipv4.ip, ipv4.gateway
-                    );
-                }
-            }
-
-            // print IPv6 Addresses
-            if let Ok(ip6s) = ipv6s {
-                for ipv6 in ip6s {
-                    println!(
-                        "Reverse: {}, IP: {}, Gateway: {}",
-                        ipv6.reverse, ipv6.ip, ipv6.gateway
-                    );
-                }
-            }
-        } else {
-            println!("you need to provide an mbpkgid");
-        }
-    } else if command == "bandwidth" {
-        let mut bw_usage = endpoints::MonthlyBw::get_all(
-            &na_client,
-            EndpointGetArgs::OneInt(loc_mbpkgid),
-        )
-        .await?;
-        println!();
-        bw_usage.sort_by_key(|b| {
-            let date_with_day = format!("{}-01", b.date);
-            NaiveDate::parse_from_str(&date_with_day, "%Y-%m-%d")
-                .expect("Failed to parse date")
-        });
-        for usage in bw_usage {
-            println!(
-                "Date: {}, Rx: {}, Tx: {}",
-                usage.date, usage.rx, usage.tx
-            );
-        }
-    } else if command == "location" {
-        let locs =
-            endpoints::Location::get_all(&na_client, EndpointGetArgs::NoArgs)
-                .await?;
-        println!();
-        // list locations
-        for loc in locs {
-            println!(
-                "ID: {}, Name: {}, Continent: {}",
-                loc.id, loc.name, loc.continent
-            );
-        }
-    } else if command == "account" {
-        let deets =
-            endpoints::Details::get_one(&na_client, EndpointGetArgs::NoArgs)
-                .await?;
-        println!();
-        // print acct details
-        println!(
-            "FullName: {:?}, Address: {:?}, {:?} {:?} {:?}",
-            deets.fullname,
-            deets.address1,
-            deets.city,
-            deets.state,
-            deets.postcode
-        );
-    } else if command == "image" {
-        let imgs =
-            endpoints::Image::get_all(&na_client, EndpointGetArgs::NoArgs)
-                .await?;
-        println!();
-        // list images
-        for img in imgs {
-            println!(
-                "ID: {}, Size: {}, Name: {}",
-                img.id,
-                img.size.unwrap_or("null".to_owned()),
-                img.os.unwrap_or("null".to_owned())
-            );
-        }
-        println!();
-    } else if command == "invoice" {
-        let invoices =
-            endpoints::Invoices::get_all(&na_client, EndpointGetArgs::NoArgs)
-                .await?;
-        // print some of the invoices, say 3?
-        for invoice in invoices.iter().take(display_count) {
-            println!("ID: {}, Status: {}", invoice.id, invoice.status);
-        }
-    } else if command == "sizes" {
-        let sizes = endpoints::Sizes::get_all(
-            &na_client,
-            EndpointGetArgs::OneInt(loc_sizes),
-        )
-        .await?;
-        // print some of the invoices, say 3?
-        for size in sizes.iter().take(40) {
-            println!("ID: {}, Name: {}", size.plan_id, size.plan);
         }
     }
     Ok(())
+}
+
+async fn print_ips(na_client: &NaClient, mbpkgid: u32) -> Result<()> {
+    require_id("mbpkgid", mbpkgid)?;
+    let (ipv4s, ipv6s) = tokio::join!(
+        endpoints::IPv4::get_all(na_client, EndpointGetArgs::OneInt(mbpkgid)),
+        endpoints::IPv6::get_all(na_client, EndpointGetArgs::OneInt(mbpkgid)),
+    );
+    let mut failed = false;
+    match ipv4s {
+        Ok(addresses) => {
+            for ipv4 in addresses {
+                println!(
+                    "Reverse: {}, IP: {}, Gateway: {}",
+                    ipv4.reverse, ipv4.ip, ipv4.gateway
+                );
+            }
+        }
+        Err(err) => {
+            eprintln!("ipv4: {err}");
+            failed = true;
+        }
+    }
+    match ipv6s {
+        Ok(addresses) => {
+            for ipv6 in addresses {
+                println!(
+                    "Reverse: {}, IP: {}, Gateway: {}",
+                    ipv6.reverse, ipv6.ip, ipv6.gateway
+                );
+            }
+        }
+        Err(err) => {
+            eprintln!("ipv6: {err}");
+            failed = true;
+        }
+    }
+    if failed {
+        bail!("one or more address requests failed");
+    }
+    Ok(())
+}
+
+async fn print_bandwidth(na_client: &NaClient, mbpkgid: u32) -> Result<()> {
+    require_id("mbpkgid", mbpkgid)?;
+    let mut bw_usage = endpoints::MonthlyBw::get_all(
+        na_client,
+        EndpointGetArgs::OneInt(mbpkgid),
+    )
+    .await?;
+    println!();
+    sort_bandwidth(&mut bw_usage)?;
+    for usage in bw_usage {
+        println!("Date: {}, Rx: {}, Tx: {}", usage.date, usage.rx, usage.tx);
+    }
+    Ok(())
+}
+
+async fn print_locations(na_client: &NaClient) -> Result<()> {
+    let locations =
+        endpoints::Location::get_all(na_client, EndpointGetArgs::NoArgs)
+            .await?;
+    println!();
+    for location in locations {
+        println!(
+            "ID: {}, Name: {}, Continent: {}",
+            location.id, location.name, location.continent
+        );
+    }
+    Ok(())
+}
+
+async fn print_account(na_client: &NaClient) -> Result<()> {
+    let details =
+        endpoints::Details::get_one(na_client, EndpointGetArgs::NoArgs).await?;
+    println!();
+    println!(
+        "FullName: {:?}, Address: {:?}, {:?} {:?} {:?}",
+        details.fullname,
+        details.address1,
+        details.city,
+        details.state,
+        details.postcode
+    );
+    Ok(())
+}
+
+async fn print_images(na_client: &NaClient) -> Result<()> {
+    let images =
+        endpoints::Image::get_all(na_client, EndpointGetArgs::NoArgs).await?;
+    println!();
+    for image in images {
+        println!(
+            "ID: {}, Size: {}, Name: {}",
+            image.id,
+            image.size.unwrap_or_else(|| "null".to_owned()),
+            image.os.unwrap_or_else(|| "null".to_owned())
+        );
+    }
+    println!();
+    Ok(())
+}
+
+async fn print_invoices(na_client: &NaClient, count: usize) -> Result<()> {
+    let invoices =
+        endpoints::Invoices::get_all(na_client, EndpointGetArgs::NoArgs)
+            .await?;
+    for invoice in invoices.iter().take(count) {
+        println!("ID: {}, Status: {}", invoice.id, invoice.status);
+    }
+    Ok(())
+}
+
+async fn print_sizes(na_client: &NaClient, id: u32) -> Result<()> {
+    require_id("id", id)?;
+    let sizes =
+        endpoints::Sizes::get_all(na_client, EndpointGetArgs::OneInt(id))
+            .await?;
+    for size in sizes {
+        println!("ID: {}, Name: {}", size.plan_id, size.plan);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bandwidth_dates_sort_chronologically() {
+        let mut usage = vec![
+            MonthlyBw {
+                date: "2024-12".into(),
+                rx: 1,
+                tx: 1,
+            },
+            MonthlyBw {
+                date: "2024-02".into(),
+                rx: 2,
+                tx: 2,
+            },
+        ];
+        sort_bandwidth(&mut usage).unwrap();
+        assert_eq!(usage[0].date, "2024-02");
+        assert_eq!(usage[1].date, "2024-12");
+    }
+
+    #[test]
+    fn a_bad_bandwidth_date_is_an_error() {
+        let mut usage = vec![MonthlyBw {
+            date: "March".into(),
+            rx: 1,
+            tx: 1,
+        }];
+        let err = sort_bandwidth(&mut usage).unwrap_err();
+        assert!(err.to_string().contains("March"));
+    }
 }

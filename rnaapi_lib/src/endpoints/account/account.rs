@@ -8,9 +8,7 @@ use crate::NaApiError;
 use crate::{EndpointGetArgs, EndpointGetOne, NaClient};
 use async_trait::async_trait;
 
-///
-/// Account Details #[derive(Debug)]
-///
+/// Account profile.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
 #[serde(rename_all = "snake_case")]
 #[getone(path = "account/details", args = 0)]
