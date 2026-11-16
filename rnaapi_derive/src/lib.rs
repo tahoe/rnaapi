@@ -1,164 +1,177 @@
-use syn::DeriveInput;
+//! Derive `get` and `list` methods for NetActuate endpoint structs.
+//!
+//! ```ignore
+//! #[derive(EndpointGetOne, EndpointGetAll)]
+//! #[getone(path = "cloud/server?mbpkgid={}", mbpkgid: u32)]
+//! #[getall(path = "cloud/servers")]
+//! struct Server { /* ... */ }
+//! ```
+//!
+//! Each `name: Type` becomes a function parameter, in order, and must match
+//! one `{}` placeholder in the path.
+use proc_macro::TokenStream;
+use quote::quote;
+use syn::parse::{Parse, ParseStream};
+use syn::{DeriveInput, Ident, LitStr, Token, Type};
 
-#[derive(deluxe::ExtractAttributes)]
-#[deluxe(attributes(getone))]
-struct EndpointGetOneAttrs {
-    path: String,
-    args: u32,
+struct EndpointAttr {
+    path: LitStr,
+    args: Vec<(Ident, Type)>,
 }
 
-#[derive(deluxe::ExtractAttributes)]
-#[deluxe(attributes(getall))]
-struct EndpointGetAllAttrs {
-    path: String,
-    args: u32,
-}
-
-fn placeholder_count(path: &str) -> usize {
-    path.matches("{}").count()
-}
-
-fn check_path(
-    path: &str, args: u32, span: proc_macro2::Span,
-) -> deluxe::Result<()> {
-    if args > 2 {
-        return Err(syn::Error::new(span, "args must be 0, 1, or 2"));
+impl Parse for EndpointAttr {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let key: Ident = input.parse()?;
+        if key != "path" {
+            return Err(syn::Error::new(
+                key.span(),
+                "expected `path = \"...\"` as the first argument",
+            ));
+        }
+        input.parse::<Token![=]>()?;
+        let path: LitStr = input.parse()?;
+        let mut args = Vec::new();
+        while input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+            if input.is_empty() {
+                break;
+            }
+            let name: Ident = input.parse()?;
+            if name == "args" && input.peek(Token![=]) {
+                return Err(syn::Error::new(
+                    name.span(),
+                    "write parameters as `name: Type`, for example `mbpkgid: u32`",
+                ));
+            }
+            input.parse::<Token![:]>()?;
+            let ty: Type = input.parse()?;
+            args.push((name, ty));
+        }
+        if !input.is_empty() {
+            return Err(input.error("unexpected tokens in endpoint attribute"));
+        }
+        Ok(Self { path, args })
     }
-    let placeholders = placeholder_count(path);
-    if placeholders != args as usize {
+}
+
+fn validate_placeholders(path: &LitStr, argc: usize) -> syn::Result<()> {
+    let value = path.value();
+    let mut count = 0usize;
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '{' {
+            match chars.next() {
+                Some('{') => {}
+                Some('}') => count += 1,
+                _ => {
+                    return Err(syn::Error::new(
+                        path.span(),
+                        "path placeholders must be `{}`",
+                    ));
+                }
+            }
+        } else if ch == '}' {
+            match chars.next() {
+                Some('}') => {}
+                _ => {
+                    return Err(syn::Error::new(
+                        path.span(),
+                        "unmatched `}` in path",
+                    ));
+                }
+            }
+        }
+    }
+    if count != argc {
         return Err(syn::Error::new(
-            span,
+            path.span(),
             format!(
-                "path `{path}` has {placeholders} `{{}}` placeholders but args = {args}"
+                "path has {count} `{{}}` placeholders but {argc} parameters"
             ),
         ));
     }
     Ok(())
 }
 
-fn parse_body(ident: &syn::Ident, list: bool) -> proc_macro2::TokenStream {
-    if list {
-        quote::quote! {
-            let results: Vec<#ident> = ::serde_json::from_value(data).map_err(|err| {
-                NaApiError::Deserialize(err.to_string())
-            })?;
-            Ok(results)
-        }
-    } else {
-        quote::quote! {
-            let result: #ident = ::serde_json::from_value(data).map_err(|err| {
-                NaApiError::Deserialize(err.to_string())
-            })?;
-            Ok(result)
-        }
-    }
-}
-
-fn fetch_match(
-    args: u32, path: &str, body: proc_macro2::TokenStream,
-) -> proc_macro2::TokenStream {
-    match args {
-        0 => quote::quote! {
-            match args {
-                EndpointGetArgs::NoArgs => {
-                    let data = na_client.get_data(&format!(#path)).await?;
-                    #body
-                }
-                _ => Err(NaApiError::UnknownError(
-                    "no arguments allowed".to_owned(),
-                )),
-            }
-        },
-        1 => quote::quote! {
-            match args {
-                EndpointGetArgs::OneInt(arg1) => {
-                    let data = na_client.get_data(&format!(#path, arg1)).await?;
-                    #body
-                }
-                _ => Err(NaApiError::UnknownError(
-                    "only one argument allowed".to_owned(),
-                )),
-            }
-        },
-        _ => quote::quote! {
-            match args {
-                EndpointGetArgs::TwoInt(arg1, arg2) => {
-                    let data = na_client.get_data(&format!(#path, arg1, arg2)).await?;
-                    #body
-                }
-                _ => Err(NaApiError::UnknownError(
-                    "only two arguments allowed".to_owned(),
-                )),
-            }
-        },
-    }
-}
-
-fn impl_endpoint(
-    item: proc_macro2::TokenStream, list: bool,
-) -> deluxe::Result<proc_macro2::TokenStream> {
-    let mut ast: DeriveInput = syn::parse2(item)?;
-    let (path, args) = if list {
-        let EndpointGetAllAttrs { path, args } =
-            deluxe::extract_attributes(&mut ast)?;
-        (path, args)
-    } else {
-        let EndpointGetOneAttrs { path, args } =
-            deluxe::extract_attributes(&mut ast)?;
-        (path, args)
+fn expand(item: TokenStream, attr_name: &str, list: bool) -> TokenStream {
+    let mut ast = match syn::parse::<DeriveInput>(item) {
+        Ok(ast) => ast,
+        Err(err) => return err.into_compile_error().into(),
     };
-    check_path(&path, args, ast.ident.span())?;
-    let ident = &ast.ident;
-    let fetch = fetch_match(args, &path, parse_body(ident, list));
-
-    if list {
-        Ok(quote::quote! {
-            #[async_trait]
-            impl EndpointGetAll for #ident {
-                type Endpoint = #ident;
-                async fn get_all(
-                    na_client: &NaClient,
-                    args: EndpointGetArgs,
-                ) -> Result<Vec<#ident>, NaApiError> {
-                    #fetch
-                }
-            }
-        })
-    } else {
-        Ok(quote::quote! {
-            #[async_trait]
-            impl EndpointGetOne for #ident {
-                type Endpoint = #ident;
-                async fn get_one(
-                    na_client: &NaClient,
-                    args: EndpointGetArgs,
-                ) -> Result<#ident, NaApiError> {
-                    #fetch
-                }
-            }
-        })
-    }
-}
-
-fn expand(
-    item: proc_macro::TokenStream, list: bool,
-) -> proc_macro::TokenStream {
-    match impl_endpoint(item.into(), list) {
+    let outcome: syn::Result<proc_macro2::TokenStream> = (|| {
+        let pos = ast
+            .attrs
+            .iter()
+            .position(|attr| attr.path().is_ident(attr_name))
+            .ok_or_else(|| {
+                syn::Error::new_spanned(
+                    &ast.ident,
+                    format!("missing #[{attr_name}(path = \"...\")] attribute"),
+                )
+            })?;
+        let attr = ast.attrs.remove(pos);
+        let parsed: EndpointAttr = attr.parse_args()?;
+        validate_placeholders(&parsed.path, parsed.args.len())?;
+        Ok(emit(&ast.ident, &parsed, list))
+    })();
+    match outcome {
         Ok(tokens) => tokens.into(),
         Err(err) => err.into_compile_error().into(),
     }
 }
 
+fn emit(
+    ident: &Ident, attr: &EndpointAttr, list: bool,
+) -> proc_macro2::TokenStream {
+    let path = &attr.path;
+    let params = attr.args.iter().map(|(name, ty)| quote!(#name: #ty));
+    let names: Vec<_> = attr.args.iter().map(|(name, _)| name).collect();
+    let fetch = if names.is_empty() {
+        quote!(client.get_data(#path).await?)
+    } else {
+        quote!(client.get_data(&format!(#path, #(#names),*)).await?)
+    };
+    let method = Ident::new(if list { "list" } else { "get" }, ident.span());
+    let output = if list {
+        quote!(Vec<#ident>)
+    } else {
+        quote!(#ident)
+    };
+    let parsed = if list {
+        quote! {
+            let results: Vec<#ident> = ::serde_json::from_value(data).map_err(|err| {
+                crate::errors::NaApiError::Deserialize(err.to_string())
+            })?;
+            Ok(results)
+        }
+    } else {
+        quote! {
+            let result: #ident = ::serde_json::from_value(data).map_err(|err| {
+                crate::errors::NaApiError::Deserialize(err.to_string())
+            })?;
+            Ok(result)
+        }
+    };
+
+    quote! {
+        impl #ident {
+            pub async fn #method(
+                client: &crate::NaClient,
+                #(#params),*
+            ) -> ::core::result::Result<#output, crate::errors::NaApiError> {
+                let data = #fetch;
+                #parsed
+            }
+        }
+    }
+}
+
 #[proc_macro_derive(EndpointGetOne, attributes(getone))]
-pub fn endpointgetone_derive_macro(
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    expand(item, false)
+pub fn endpointgetone_derive_macro(item: TokenStream) -> TokenStream {
+    expand(item, "getone", false)
 }
 
 #[proc_macro_derive(EndpointGetAll, attributes(getall))]
-pub fn endpointgetall_derive_macro(
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    expand(item, true)
+pub fn endpointgetall_derive_macro(item: TokenStream) -> TokenStream {
+    expand(item, "getall", true)
 }

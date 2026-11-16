@@ -7,13 +7,13 @@
 //! use anyhow::Result;
 //! use rnaapi::config::Settings;
 //! use rnaapi::endpoints::Server;
-//! use rnaapi::{EndpointGetAll, EndpointGetArgs, NaClient};
+//! use rnaapi::NaClient;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
 //!     let settings = Settings::new()?;
 //!     let client = NaClient::new(settings.api_key, settings.api_url).await?;
-//!     let servers = Server::get_all(&client, EndpointGetArgs::NoArgs).await?;
+//!     let servers = Server::list(&client).await?;
 //!     for server in servers {
 //!         println!("fqdn: {}, mbpkgid: {}", server.fqdn, server.mbpkgid);
 //!     }
@@ -24,7 +24,6 @@
 // Copyright (C) 2025 Dennis Durling
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
-use async_trait::async_trait;
 use errors::NaApiError;
 use reqwest::ClientBuilder;
 use reqwest_hickory_resolver::HickoryResolver;
@@ -43,42 +42,6 @@ pub struct NaClient {
     pub address: String,
     pub api_key: String,
     pub http_client: reqwest::Client,
-}
-
-pub enum EndpointGetArgs {
-    NoArgs,
-    OneInt(u32),
-    TwoInt(u32, u32),
-}
-
-#[async_trait]
-pub trait EndpointGetOne {
-    type Endpoint;
-
-    #[allow(unused)]
-    async fn get_one(
-        na_client: &NaClient, args: EndpointGetArgs,
-    ) -> Result<Self::Endpoint, NaApiError> {
-        let _ = (na_client, args);
-        Err(NaApiError::UnknownError(
-            "get one is not implemented for this endpoint".to_string(),
-        ))
-    }
-}
-
-#[async_trait]
-pub trait EndpointGetAll {
-    type Endpoint;
-
-    #[allow(unused)]
-    async fn get_all(
-        na_client: &NaClient, args: EndpointGetArgs,
-    ) -> Result<Vec<Self::Endpoint>, NaApiError> {
-        let _ = (na_client, args);
-        Err(NaApiError::UnknownError(
-            "get all is not implemented for this endpoint".to_string(),
-        ))
-    }
 }
 
 impl NaClient {

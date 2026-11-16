@@ -3,13 +3,11 @@
 // under the GNU General Public License v3.0
 use serde::{Deserialize, Serialize};
 
-use crate::errors::NaApiError;
-use crate::{EndpointGetAll, EndpointGetArgs, NaClient};
-use async_trait::async_trait;
+use crate::EndpointGetAll;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
 #[serde(rename_all = "snake_case")]
-#[getall(path = "cloud/images", args = 0)]
+#[getall(path = "cloud/images")]
 pub struct Image {
     pub id: u32,
     pub os: Option<String>,

@@ -3,13 +3,11 @@
 // under the GNU General Public License v3.0
 use serde::{Deserialize, Serialize};
 
-use crate::errors::NaApiError;
-use crate::{EndpointGetAll, EndpointGetArgs, NaClient};
-use async_trait::async_trait;
+use crate::EndpointGetAll;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
 #[serde(rename_all = "snake_case")]
-#[getall(path = "cloud/sizes/{}", args = 1)]
+#[getall(path = "cloud/sizes/{}", id: u32)]
 pub struct Sizes {
     pub plan_id: u32,
     pub plan: String,

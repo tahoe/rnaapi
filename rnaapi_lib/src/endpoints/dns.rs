@@ -1,12 +1,9 @@
 // Copyright (C) 2025 Dennis Durling
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
-#![allow(clippy::too_many_arguments)]
 use serde::{Deserialize, Serialize};
 
-use crate::errors::NaApiError;
-use crate::{EndpointGetAll, EndpointGetArgs, EndpointGetOne, NaClient};
-use async_trait::async_trait;
+use crate::{EndpointGetAll, EndpointGetOne};
 
 //
 // Zone ttl key type since it changes between
@@ -32,8 +29,8 @@ pub enum TtlType {
     EndpointGetAll,
 )]
 #[serde(rename_all = "snake_case")]
-#[getone(path = "dns/zone/{}", args = 1)]
-#[getall(path = "dns/zones?type=NATIVE", args = 0)]
+#[getone(path = "dns/zone/{}", id: u32)]
+#[getall(path = "dns/zones?type=NATIVE")]
 pub struct Zone {
     pub id: u32,
     pub name: String,
@@ -74,8 +71,8 @@ pub struct SOA {
     EndpointGetOne,
 )]
 #[serde(rename_all = "snake_case")]
-#[getone(path = "dns/record/{}", args = 1)]
-#[getall(path = "dns/records/{}", args = 1)]
+#[getone(path = "dns/record/{}", id: u32)]
+#[getall(path = "dns/records/{}", id: u32)]
 pub struct Record {
     pub id: u32,
     pub name: String,

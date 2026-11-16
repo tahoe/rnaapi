@@ -1,12 +1,9 @@
 // Copyright (C) 2025 Dennis Durling
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
-#![allow(clippy::too_many_arguments)]
 use serde::{Deserialize, Serialize};
 
-use crate::errors::NaApiError;
-use crate::{EndpointGetAll, EndpointGetArgs, EndpointGetOne, NaClient};
-use async_trait::async_trait;
+use crate::{EndpointGetAll, EndpointGetOne};
 
 //
 // Server struct
@@ -21,8 +18,8 @@ use async_trait::async_trait;
     EndpointGetAll,
 )]
 #[serde(rename_all = "snake_case")]
-#[getall(path = "cloud/servers", args = 0)]
-#[getone(path = "cloud/server?mbpkgid={}", args = 1)]
+#[getall(path = "cloud/servers")]
+#[getone(path = "cloud/server?mbpkgid={}", mbpkgid: u32)]
 pub struct Server {
     pub city: String,
     pub fqdn: String,
@@ -57,8 +54,8 @@ pub struct Server {
     EndpointGetOne,
 )]
 #[serde(rename_all = "snake_case")]
-#[getall(path = "cloud/server/{}/jobs", args = 1)]
-#[getone(path = "cloud/server/{}/jobs/{}", args = 2)]
+#[getall(path = "cloud/server/{}/jobs", mbpkgid: u32)]
+#[getone(path = "cloud/server/{}/jobs/{}", mbpkgid: u32, jobid: u32)]
 pub struct SrvJob {
     pub id: u32,
     // #[serde(with = "custom_datetime_format_seconds")]
@@ -74,7 +71,7 @@ pub struct SrvJob {
 //
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
 #[serde(rename_all = "snake_case")]
-#[getone(path = "cloud/status/{}", args = 1)]
+#[getone(path = "cloud/status/{}", mbpkgid: u32)]
 pub struct SrvStatus {
     pub status: String,
 }
@@ -85,7 +82,7 @@ pub struct SrvStatus {
 //
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
 #[serde(rename_all = "snake_case")]
-#[getall(path = "cloud/ipv4?mbpkgid={}", args = 1)]
+#[getall(path = "cloud/ipv4?mbpkgid={}", mbpkgid: u32)]
 pub struct IPv4 {
     pub id: u32,
     pub primary: u32,
@@ -102,7 +99,7 @@ pub struct IPv4 {
 //
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
 #[serde(rename_all = "snake_case")]
-#[getall(path = "cloud/ipv6?mbpkgid={}", args = 1)]
+#[getall(path = "cloud/ipv6?mbpkgid={}", mbpkgid: u32)]
 pub struct IPv6 {
     pub id: u32,
     pub primary: u32,
@@ -119,7 +116,7 @@ pub struct IPv6 {
 //
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
 #[serde(rename_all = "snake_case")]
-#[getall(path = "cloud/servermonthlybw/{}", args = 1)]
+#[getall(path = "cloud/servermonthlybw/{}", mbpkgid: u32)]
 pub struct MonthlyBw {
     pub date: String,
     pub rx: u32,

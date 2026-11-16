@@ -53,23 +53,23 @@ pub enum GetCommands {
     /// Server subcommands
     #[command(visible_alias = "srv")]
     Server {
-        /// Package id. `0` lists every server.
-        #[arg(short, long, default_value_t = 0)]
-        mbpkgid: u32,
+        /// Package id. Omit to list every server.
+        #[arg(short, long)]
+        mbpkgid: Option<u32>,
     },
 
     /// DNS subcommands
     Dns {
-        /// Zone id. `0` lists every zone.
-        #[arg(short, long, default_value_t = 0)]
-        id: u32,
+        /// Zone id. Omit to list every zone.
+        #[arg(short, long)]
+        id: Option<u32>,
     },
 
     /// SSh subcommands
     Ssh {
-        /// Key id. `0` lists every key.
-        #[arg(short, long, default_value_t = 0)]
-        id: u32,
+        /// Key id. Omit to list every key.
+        #[arg(short, long)]
+        id: Option<u32>,
     },
 
     /// Job subcommands

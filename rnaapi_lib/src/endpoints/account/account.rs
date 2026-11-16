@@ -1,17 +1,14 @@
 // Copyright (C) 2025 Dennis Durling
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
-#![allow(clippy::too_many_arguments)]
 use serde::{Deserialize, Serialize};
 
-use crate::NaApiError;
-use crate::{EndpointGetArgs, EndpointGetOne, NaClient};
-use async_trait::async_trait;
+use crate::EndpointGetOne;
 
 /// Account profile.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
 #[serde(rename_all = "snake_case")]
-#[getone(path = "account/details", args = 0)]
+#[getone(path = "account/details")]
 pub struct Details {
     pub result: String,
     pub userid: String,

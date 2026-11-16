@@ -18,9 +18,9 @@ use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
 use clap::{CommandFactory, Parser};
 use clap_complete::generate;
+use rnaapi::NaClient;
 use rnaapi::config::Settings;
 use rnaapi::endpoints::{self, MonthlyBw};
-use rnaapi::{EndpointGetAll, EndpointGetArgs, EndpointGetOne, NaClient};
 use rnatui::commands::get_pub_key;
 use rnatui::commands::{Cli, Commands, GetCommands};
 
@@ -99,30 +99,24 @@ fn sort_bandwidth(bw_usage: &mut [MonthlyBw]) -> Result<()> {
     Ok(())
 }
 
-async fn print_server(na_client: &NaClient, mbpkgid: u32) -> Result<()> {
-    if mbpkgid == 0 {
-        let servers =
-            endpoints::Server::get_all(na_client, EndpointGetArgs::NoArgs)
-                .await?;
+async fn print_server(
+    na_client: &NaClient, mbpkgid: Option<u32>,
+) -> Result<()> {
+    let Some(mbpkgid) = mbpkgid else {
+        let servers = endpoints::Server::list(na_client).await?;
         for server in servers {
             println!("ID: {}, fqdn: {}", server.mbpkgid, server.fqdn);
         }
         return Ok(());
-    }
+    };
 
     let (server, srvjobs, ipv4s, ipv6s, status, bw_usage) = tokio::join!(
-        endpoints::Server::get_one(na_client, EndpointGetArgs::OneInt(mbpkgid)),
-        endpoints::SrvJob::get_all(na_client, EndpointGetArgs::OneInt(mbpkgid)),
-        endpoints::IPv4::get_all(na_client, EndpointGetArgs::OneInt(mbpkgid)),
-        endpoints::IPv6::get_all(na_client, EndpointGetArgs::OneInt(mbpkgid)),
-        endpoints::SrvStatus::get_one(
-            na_client,
-            EndpointGetArgs::OneInt(mbpkgid)
-        ),
-        endpoints::MonthlyBw::get_all(
-            na_client,
-            EndpointGetArgs::OneInt(mbpkgid)
-        ),
+        endpoints::Server::get(na_client, mbpkgid),
+        endpoints::SrvJob::list(na_client, mbpkgid),
+        endpoints::IPv4::list(na_client, mbpkgid),
+        endpoints::IPv6::list(na_client, mbpkgid),
+        endpoints::SrvStatus::get(na_client, mbpkgid),
+        endpoints::MonthlyBw::list(na_client, mbpkgid),
     );
 
     let mut failed = false;
@@ -217,12 +211,10 @@ async fn print_server(na_client: &NaClient, mbpkgid: u32) -> Result<()> {
     Ok(())
 }
 
-async fn print_dns(na_client: &NaClient, id: u32) -> Result<()> {
-    if id == 0 {
+async fn print_dns(na_client: &NaClient, id: Option<u32>) -> Result<()> {
+    let Some(id) = id else {
         println!();
-        let zones =
-            endpoints::Zone::get_all(na_client, EndpointGetArgs::NoArgs)
-                .await?;
+        let zones = endpoints::Zone::list(na_client).await?;
         for zone in zones {
             println!(
                 "ID: {}, Name: {}, Type: {}",
@@ -230,11 +222,10 @@ async fn print_dns(na_client: &NaClient, id: u32) -> Result<()> {
             );
         }
         return Ok(());
-    }
+    };
 
     println!();
-    let zone = endpoints::Zone::get_one(na_client, EndpointGetArgs::OneInt(id))
-        .await?;
+    let zone = endpoints::Zone::get(na_client, id).await?;
     println!("Zone: {}", zone.name);
     if let Some(soa) = &zone.soa {
         println!("SOA: {}", soa.primary);
@@ -250,20 +241,16 @@ async fn print_dns(na_client: &NaClient, id: u32) -> Result<()> {
     Ok(())
 }
 
-async fn print_ssh(na_client: &NaClient, id: u32) -> Result<()> {
+async fn print_ssh(na_client: &NaClient, id: Option<u32>) -> Result<()> {
     println!();
-    if id > 0 {
-        let sshkey =
-            endpoints::SSHKeys::get_one(na_client, EndpointGetArgs::OneInt(id))
-                .await?;
+    if let Some(id) = id {
+        let sshkey = endpoints::SSHKeys::get(na_client, id).await?;
         println!(
             "ID: {}, Name: {}, Fingerprint: {}",
             sshkey.id, sshkey.name, sshkey.fingerprint
         );
     } else {
-        let keys =
-            endpoints::SSHKeys::get_all(na_client, EndpointGetArgs::NoArgs)
-                .await?;
+        let keys = endpoints::SSHKeys::list(na_client).await?;
         for sshkey in keys {
             println!(
                 "ID: {}, Name: {}, Fingerprint: {}",
@@ -280,21 +267,13 @@ async fn print_job(
     require_id("mbpkgid", mbpkgid)?;
     println!();
     if jobid > 0 {
-        let job = endpoints::SrvJob::get_one(
-            na_client,
-            EndpointGetArgs::TwoInt(mbpkgid, jobid),
-        )
-        .await?;
+        let job = endpoints::SrvJob::get(na_client, mbpkgid, jobid).await?;
         println!(
             "ID: {}, Status: {}, Command: {}",
             job.id, job.status, job.command
         );
     } else {
-        let jobs = endpoints::SrvJob::get_all(
-            na_client,
-            EndpointGetArgs::OneInt(mbpkgid),
-        )
-        .await?;
+        let jobs = endpoints::SrvJob::list(na_client, mbpkgid).await?;
         for job in jobs {
             println!(
                 "ID: {}, Status: {}, Command: {}",
@@ -308,8 +287,8 @@ async fn print_job(
 async fn print_ips(na_client: &NaClient, mbpkgid: u32) -> Result<()> {
     require_id("mbpkgid", mbpkgid)?;
     let (ipv4s, ipv6s) = tokio::join!(
-        endpoints::IPv4::get_all(na_client, EndpointGetArgs::OneInt(mbpkgid)),
-        endpoints::IPv6::get_all(na_client, EndpointGetArgs::OneInt(mbpkgid)),
+        endpoints::IPv4::list(na_client, mbpkgid),
+        endpoints::IPv6::list(na_client, mbpkgid),
     );
     let mut failed = false;
     match ipv4s {
@@ -348,11 +327,7 @@ async fn print_ips(na_client: &NaClient, mbpkgid: u32) -> Result<()> {
 
 async fn print_bandwidth(na_client: &NaClient, mbpkgid: u32) -> Result<()> {
     require_id("mbpkgid", mbpkgid)?;
-    let mut bw_usage = endpoints::MonthlyBw::get_all(
-        na_client,
-        EndpointGetArgs::OneInt(mbpkgid),
-    )
-    .await?;
+    let mut bw_usage = endpoints::MonthlyBw::list(na_client, mbpkgid).await?;
     println!();
     sort_bandwidth(&mut bw_usage)?;
     for usage in bw_usage {
@@ -362,9 +337,7 @@ async fn print_bandwidth(na_client: &NaClient, mbpkgid: u32) -> Result<()> {
 }
 
 async fn print_locations(na_client: &NaClient) -> Result<()> {
-    let locations =
-        endpoints::Location::get_all(na_client, EndpointGetArgs::NoArgs)
-            .await?;
+    let locations = endpoints::Location::list(na_client).await?;
     println!();
     for location in locations {
         println!(
@@ -376,8 +349,7 @@ async fn print_locations(na_client: &NaClient) -> Result<()> {
 }
 
 async fn print_account(na_client: &NaClient) -> Result<()> {
-    let details =
-        endpoints::Details::get_one(na_client, EndpointGetArgs::NoArgs).await?;
+    let details = endpoints::Details::get(na_client).await?;
     println!();
     println!(
         "FullName: {:?}, Address: {:?}, {:?} {:?} {:?}",
@@ -391,8 +363,7 @@ async fn print_account(na_client: &NaClient) -> Result<()> {
 }
 
 async fn print_images(na_client: &NaClient) -> Result<()> {
-    let images =
-        endpoints::Image::get_all(na_client, EndpointGetArgs::NoArgs).await?;
+    let images = endpoints::Image::list(na_client).await?;
     println!();
     for image in images {
         println!(
@@ -407,9 +378,7 @@ async fn print_images(na_client: &NaClient) -> Result<()> {
 }
 
 async fn print_invoices(na_client: &NaClient, count: usize) -> Result<()> {
-    let invoices =
-        endpoints::Invoices::get_all(na_client, EndpointGetArgs::NoArgs)
-            .await?;
+    let invoices = endpoints::Invoices::list(na_client).await?;
     for invoice in invoices.iter().take(count) {
         println!("ID: {}, Status: {}", invoice.id, invoice.status);
     }
@@ -418,9 +387,7 @@ async fn print_invoices(na_client: &NaClient, count: usize) -> Result<()> {
 
 async fn print_sizes(na_client: &NaClient, id: u32) -> Result<()> {
     require_id("id", id)?;
-    let sizes =
-        endpoints::Sizes::get_all(na_client, EndpointGetArgs::OneInt(id))
-            .await?;
+    let sizes = endpoints::Sizes::list(na_client, id).await?;
     for size in sizes {
         println!("ID: {}, Name: {}", size.plan_id, size.plan);
     }
