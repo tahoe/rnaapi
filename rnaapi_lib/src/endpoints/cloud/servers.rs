@@ -122,3 +122,9 @@ pub struct MonthlyBw {
     pub rx: u32,
     pub tx: u32,
 }
+
+/// `cloud/servers/current`. `Server` already owns `get` and `list`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
+#[serde(transparent)]
+#[getone(path = "cloud/servers/current")]
+pub struct CurrentServer(pub Server);

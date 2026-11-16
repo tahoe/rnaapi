@@ -3,10 +3,19 @@
 // under the GNU General Public License v3.0
 use serde::{Deserialize, Serialize};
 
-use crate::EndpointGetAll;
+use crate::{EndpointGetAll, EndpointGetOne};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    EndpointGetOne,
+    EndpointGetAll,
+)]
 #[serde(rename_all = "snake_case")]
+#[getone(path = "cloud/images/{}", id: u32)]
 #[getall(path = "cloud/images")]
 pub struct Image {
     pub id: u32,
@@ -22,4 +31,38 @@ pub struct Image {
     pub tech: Option<String>,
     pub icon: Option<String>,
     pub private: Option<u32>,
+}
+
+/// `cloud/images/my`. `Image` already owns `list` for `cloud/images`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
+#[serde(transparent)]
+#[getone(path = "cloud/images/my")]
+pub struct MyImages(pub Vec<Image>);
+
+/// `cloud/images/base`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
+#[serde(transparent)]
+#[getone(path = "cloud/images/base")]
+pub struct BaseImages(pub Vec<Image>);
+
+/// `cloud/images/private`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
+#[serde(transparent)]
+#[getone(path = "cloud/images/private")]
+pub struct PrivateImages(pub Vec<Image>);
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
+#[serde(rename_all = "snake_case")]
+#[getone(path = "cloud/images/queue_status/{}", queue_id: u32)]
+pub struct ImageQueueStatus {
+    pub status: String,
+    pub percent: i64,
+    pub response: String,
+    pub image_id: i64,
+    pub image_name: String,
+    pub image_help: String,
+    pub location: String,
+    pub mb_pkgid: i64,
+    pub fqdn: String,
+    pub os: String,
 }

@@ -3,7 +3,7 @@
 // under the GNU General Public License v3.0
 use serde::{Deserialize, Serialize};
 
-use crate::EndpointGetAll;
+use crate::{EndpointGetAll, EndpointGetOne};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
 #[serde(rename_all = "snake_case")]
@@ -19,3 +19,28 @@ pub struct Sizes {
     pub port: String,
     pub available: f32,
 }
+
+/// `cloud/sizes` with no location. `Sizes` already lists one location id.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
+#[serde(rename_all = "snake_case")]
+#[getall(path = "cloud/sizes")]
+pub struct Plan {
+    pub plan_id: i64,
+    pub plan: String,
+    pub ram: String,
+    pub disk: String,
+    pub transfer: String,
+    pub price: String,
+    pub available: f64,
+}
+
+/// Deploy sizes for a location name. `Sizes::list` takes a numeric location id.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
+#[serde(transparent)]
+#[getone(path = "cloud/sizes/{}", location: String)]
+pub struct DeploySizes(pub Vec<Sizes>);
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetOne)]
+#[serde(transparent)]
+#[getone(path = "cloud/sizes/plan-id/{}", plan: String)]
+pub struct PlanId(pub serde_json::Value);

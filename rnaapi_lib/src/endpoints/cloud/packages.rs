@@ -3,10 +3,19 @@
 // under the GNU General Public License v3.0
 use serde::{Deserialize, Serialize};
 
-use crate::EndpointGetAll;
+use crate::{EndpointGetAll, EndpointGetOne};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EndpointGetAll)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    EndpointGetOne,
+    EndpointGetAll,
+)]
 #[serde(rename_all = "snake_case")]
+#[getone(path = "cloud/package/{}", id: u32)]
 #[getall(path = "cloud/packages")]
 pub struct Package {
     pub mbpkgid: u32,
