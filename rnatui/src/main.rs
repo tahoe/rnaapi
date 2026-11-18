@@ -69,7 +69,7 @@ async fn dispatch(cmd: GetCommands) -> Result<()> {
             print_invoices(&na_client, count).await
         }
         GetCommands::Sizes { id } => print_sizes(&na_client, id).await,
-        GetCommands::Location {} => print_locations(&na_client).await,
+        GetCommands::Location { id } => print_locations(&na_client, id).await,
         GetCommands::Image {} => print_images(&na_client).await,
         GetCommands::Account {} => print_account(&na_client).await,
     }
@@ -336,13 +336,28 @@ async fn print_bandwidth(na_client: &NaClient, mbpkgid: u32) -> Result<()> {
     Ok(())
 }
 
-async fn print_locations(na_client: &NaClient) -> Result<()> {
-    let locations = endpoints::Location::list(na_client).await?;
+async fn print_locations(na_client: &NaClient, id: Option<u32>) -> Result<()> {
     println!();
-    for location in locations {
+    let Some(id) = id else {
+        let locations = endpoints::Location::list(na_client).await?;
+        for location in locations {
+            println!(
+                "ID: {}, Name: {}, Continent: {}",
+                location.id, location.name, location.continent
+            );
+        }
+        return Ok(());
+    };
+
+    let location = endpoints::Location::get(na_client, id).await?;
+    println!(
+        "ID: {}, Name: {}, IATA: {}, Continent: {}",
+        location.id, location.name, location.iata_code, location.continent
+    );
+    for status in location.status {
         println!(
-            "ID: {}, Name: {}, Continent: {}",
-            location.id, location.name, location.continent
+            "Status: {}, {}",
+            status.status_name, status.container_status
         );
     }
     Ok(())

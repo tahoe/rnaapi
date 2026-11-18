@@ -111,7 +111,11 @@ pub enum GetCommands {
 
     /// Location subcommands
     #[command(visible_alias = "loc")]
-    Location {},
+    Location {
+        /// Location id. Omit to list every location.
+        #[arg(short, long)]
+        id: Option<u32>,
+    },
 
     /// Images subcommands
     #[command(visible_alias = "img")]
