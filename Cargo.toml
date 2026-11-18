@@ -3,10 +3,11 @@ resolver = "3"
 members = [
     "rnaapi_lib",
     "rnaapi_derive",
-    "rnatui",
+    "rnacli",
 ]
+exclude = ["rnatui"]
 [workspace.package]
-version = "2.0.21"
+version = "2.0.22"
 license = "GPL-3.0-only"
 edition = "2024"
 description = "NetActuate API client library and cli program"

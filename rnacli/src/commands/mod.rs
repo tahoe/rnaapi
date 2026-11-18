@@ -26,7 +26,7 @@ pub fn get_pub_key(filepath: &str) -> Result<String> {
     Ok(pubkey.to_string())
 }
 
-/// Key material for `rnatui new ssh`.
+/// Key material for `rnacli new ssh`.
 #[derive(Debug)]
 pub struct NewSshKey {
     pub name: String,

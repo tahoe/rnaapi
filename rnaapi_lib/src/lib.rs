@@ -1,7 +1,7 @@
 //! Async client for the NetActuate API.
 //!
 //! `API_KEY` is required. `API_ADDRESS` is optional and defaults to
-//! `https://vapi2.netactuate.com/api/`. The CLI lives in the `rnatui` crate.
+//! `https://vapi2.netactuate.com/api/`. The CLI lives in the `rnacli` crate.
 //!
 //! ```no_run
 //! use anyhow::Result;
