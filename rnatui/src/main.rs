@@ -9,6 +9,8 @@
 //! ```text
 //! rnatui get server
 //! rnatui get server -m <mbpkgid>
+//! rnatui power-virt off -m <mbpkgid>
+//! rnatui power-ded off -m <mbpkgid>
 //! ```
 //!
 // Copyright (C) 2025 Dennis Durling
@@ -22,7 +24,10 @@ use rnaapi::NaClient;
 use rnaapi::config::Settings;
 use rnaapi::endpoints::{self, MonthlyBw};
 use rnatui::commands::get_pub_key;
-use rnatui::commands::{Cli, Commands, GetCommands};
+use rnatui::commands::new_ssh_key;
+use rnatui::commands::{
+    Cli, Commands, GetCommands, NewCommands, PowerCommands,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -42,8 +47,98 @@ async fn main() -> Result<()> {
             }
             other => dispatch(other).await,
         },
+        Some(Commands::New { cmd }) => match cmd {
+            NewCommands::Ssh { file } => create_ssh(file).await,
+        },
+        Some(Commands::PowerVirt { cmd }) => power_virt(cmd).await,
+        Some(Commands::PowerDed { cmd }) => power_ded(cmd).await,
         None => Ok(()),
     }
+}
+
+async fn create_ssh(file: Option<String>) -> Result<()> {
+    let key = new_ssh_key(file.as_deref())?;
+    if let Some(private) = &key.private_path {
+        println!("Saved {}", private.display());
+        println!("Saved {}", private.with_extension("pub").display());
+    }
+    let settings = Settings::new()?;
+    let na_client = NaClient::new(settings.api_key, settings.api_url).await?;
+    let created = endpoints::SSHKeys::create(
+        &na_client,
+        &endpoints::SshKeyBody {
+            name: key.name,
+            ssh_key: key.ssh_key,
+        },
+    )
+    .await?;
+    println!(
+        "ID: {}, Name: {}, Fingerprint: {}",
+        created.id, created.name, created.fingerprint
+    );
+    Ok(())
+}
+
+fn power_target(cmd: &PowerCommands) -> (u32, bool) {
+    match cmd {
+        PowerCommands::On(target)
+        | PowerCommands::Off(target)
+        | PowerCommands::Reboot(target) => (target.mbpkgid, target.force),
+    }
+}
+
+async fn power_client() -> Result<NaClient> {
+    let settings = Settings::new()?;
+    let client = NaClient::new(settings.api_key, settings.api_url).await?;
+    Ok(client)
+}
+
+async fn power_virt(cmd: PowerCommands) -> Result<()> {
+    let (mbpkgid, force) = power_target(&cmd);
+    require_id("mbpkgid", mbpkgid)?;
+    let na_client = power_client().await?;
+    let body = endpoints::ServerPower {
+        force: force.then_some(true),
+    };
+    let result = match cmd {
+        PowerCommands::On(_) => {
+            endpoints::Server::start(&na_client, mbpkgid, &body).await?
+        }
+        PowerCommands::Off(_) => {
+            endpoints::Server::shutdown(&na_client, mbpkgid, &body).await?
+        }
+        PowerCommands::Reboot(_) => {
+            endpoints::Server::reboot(&na_client, mbpkgid, &body).await?
+        }
+    };
+    println!("{result}");
+    Ok(())
+}
+
+async fn power_ded(cmd: PowerCommands) -> Result<()> {
+    let (mbpkgid, force) = power_target(&cmd);
+    require_id("mbpkgid", mbpkgid)?;
+    let na_client = power_client().await?;
+    let body = endpoints::DedicatedAction {
+        force: force.then_some(true),
+        password: None,
+    };
+    match cmd {
+        PowerCommands::On(_) => {
+            endpoints::MetalServer::start(&na_client, mbpkgid, &body).await?;
+            println!("on {mbpkgid}");
+        }
+        PowerCommands::Off(_) => {
+            endpoints::MetalServer::shutdown(&na_client, mbpkgid, &body)
+                .await?;
+            println!("off {mbpkgid}");
+        }
+        PowerCommands::Reboot(_) => {
+            endpoints::MetalServer::reboot(&na_client, mbpkgid, &body).await?;
+            println!("reboot {mbpkgid}");
+        }
+    }
+    Ok(())
 }
 
 async fn dispatch(cmd: GetCommands) -> Result<()> {
