@@ -120,12 +120,22 @@ impl DetailControl {
     }
 }
 
+/// A draggable rule. It is not part of the Tab cycle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Split {
+    /// The vertical rule between the list and the detail.
+    Columns,
+    /// The horizontal rule between the main panes and the log.
+    Rows,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Focus {
     Tab(Tab),
     Row(usize),
     Detail(DetailControl),
     ServerPane(ServerPane),
+    Split(Split),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,12 +185,34 @@ pub struct Hit {
     pub area: Rect,
 }
 
+/// List and detail stay wide enough to read. The log keeps a few rows.
+pub const PANE_MIN: u16 = 20;
+pub const LOG_MIN: u16 = 3;
+pub const LOG_DEFAULT: u16 = 4;
+/// Top bar, tab row, and key bar. The body and the log share what remains.
+const CHROME: u16 = 1 + 3 + 1;
+/// Body rows kept so the frame still has an interior.
+const MAIN_MIN: u16 = 6;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Screen {
     pub hits: Vec<Hit>,
     pub list: Rect,
     pub detail: Rect,
     pub list_window: u16,
+    /// Columns of the list pane, not counting the vertical rule. `0` means
+    /// the first frame still has to apply the starting 42% width.
+    pub list_width: u16,
+    pub log_rows: u16,
+    pub area: Rect,
+    pub top: Rect,
+    pub tabs: Rect,
+    pub body: Rect,
+    pub log: Rect,
+    pub hints: Rect,
+    pub columns_split: Rect,
+    pub rows_split: Rect,
+    pub drag: Option<Split>,
 }
 
 impl Default for Screen {
@@ -190,6 +222,17 @@ impl Default for Screen {
             list: Rect::default(),
             detail: Rect::default(),
             list_window: 1,
+            list_width: 0,
+            log_rows: LOG_DEFAULT,
+            area: Rect::default(),
+            top: Rect::default(),
+            tabs: Rect::default(),
+            body: Rect::default(),
+            log: Rect::default(),
+            hints: Rect::default(),
+            columns_split: Rect::default(),
+            rows_split: Rect::default(),
+            drag: None,
         }
     }
 }
@@ -205,6 +248,170 @@ impl Screen {
         }
         self.hits.push(Hit { target, area });
     }
+
+    /// Place the panes for this frame and keep a resize that is already underway.
+    pub fn prepare(&mut self, area: Rect) {
+        self.area = area;
+        if self.log_rows == 0 {
+            self.log_rows = LOG_DEFAULT;
+        }
+        self.log_rows = clamp_log_rows(self.log_rows, area.height);
+        let bands = bands(area, self.log_rows);
+        self.top = bands.top;
+        self.tabs = bands.tabs;
+        self.body = bands.body;
+        self.log = bands.log;
+        self.hints = bands.hints;
+        let want = if self.list_width == 0 {
+            default_list_width(bands.body.width)
+        } else {
+            self.list_width
+        };
+        self.list_width = clamp_list_width(want, bands.body.width);
+        let split_x = bands.body.x.saturating_add(self.list_width);
+        let rule_height = bands.body.height.saturating_sub(1);
+        self.columns_split = Rect {
+            x: split_x,
+            y: bands.body.y,
+            width: u16::from(bands.body.width > 0),
+            height: rule_height,
+        };
+        self.rows_split = Rect {
+            x: bands.body.x,
+            y: bands.body.bottom().saturating_sub(1),
+            width: bands.body.width,
+            height: u16::from(bands.body.height > 0),
+        };
+    }
+
+    pub fn nudge(&mut self, split: Split, delta: i16) {
+        match split {
+            Split::Columns => {
+                let next =
+                    i16::try_from(self.list_width).unwrap_or(i16::MAX) + delta;
+                self.list_width = clamp_list_width(
+                    u16::try_from(next.max(0)).unwrap_or(0),
+                    self.body.width,
+                );
+            }
+            Split::Rows => {
+                let next =
+                    i16::try_from(self.log_rows).unwrap_or(i16::MAX) + delta;
+                self.log_rows = clamp_log_rows(
+                    u16::try_from(next.max(0)).unwrap_or(0),
+                    self.area.height,
+                );
+            }
+        }
+    }
+
+    /// Move the vertical rule so it sits on `column`.
+    pub fn drag_columns_to(&mut self, column: u16) {
+        let width = column.saturating_sub(self.body.x);
+        self.list_width = clamp_list_width(width, self.body.width);
+    }
+
+    /// Move the horizontal rule so it sits on `row`.
+    pub fn drag_rows_to(&mut self, row: u16) {
+        let log_rows = self.hints.y.saturating_sub(row.saturating_add(1));
+        self.log_rows = clamp_log_rows(log_rows, self.area.height);
+    }
+}
+
+struct Bands {
+    top: Rect,
+    tabs: Rect,
+    body: Rect,
+    log: Rect,
+    hints: Rect,
+}
+
+fn bands(area: Rect, log_rows: u16) -> Bands {
+    let top_h = 1.min(area.height);
+    let tabs_h = 3.min(area.height.saturating_sub(top_h));
+    let hints_h =
+        1.min(area.height.saturating_sub(top_h.saturating_add(tabs_h)));
+    let hints_y = area.y.saturating_add(area.height.saturating_sub(hints_h));
+    let log_y = hints_y.saturating_sub(log_rows);
+    let body_y = area.y.saturating_add(top_h.saturating_add(tabs_h));
+    let body_h = log_y.saturating_sub(body_y);
+    Bands {
+        top: Rect {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: top_h,
+        },
+        tabs: Rect {
+            x: area.x,
+            y: area.y.saturating_add(top_h),
+            width: area.width,
+            height: tabs_h,
+        },
+        body: Rect {
+            x: area.x,
+            y: body_y,
+            width: area.width,
+            height: body_h,
+        },
+        log: Rect {
+            x: area.x,
+            y: log_y,
+            width: area.width,
+            height: log_rows.min(hints_y.saturating_sub(log_y)),
+        },
+        hints: Rect {
+            x: area.x,
+            y: hints_y,
+            width: area.width,
+            height: hints_h,
+        },
+    }
+}
+
+pub fn default_list_width(body_width: u16) -> u16 {
+    let want =
+        u16::try_from(u32::from(body_width) * 42 / 100).unwrap_or(body_width);
+    clamp_list_width(want, body_width)
+}
+
+pub fn clamp_list_width(want: u16, body_width: u16) -> u16 {
+    if body_width < 3 {
+        return body_width.saturating_sub(1) / 2;
+    }
+    let floor = if body_width >= PANE_MIN.saturating_mul(2).saturating_add(1) {
+        PANE_MIN
+    } else {
+        body_width.saturating_sub(1) / 2
+    };
+    let max = body_width.saturating_sub(1).saturating_sub(floor);
+    if max < floor {
+        return floor.min(body_width.saturating_sub(1));
+    }
+    want.clamp(floor, max)
+}
+
+pub fn clamp_log_rows(want: u16, area_height: u16) -> u16 {
+    let available = area_height.saturating_sub(CHROME);
+    if available == 0 {
+        return 0;
+    }
+    let max_log = available.saturating_sub(MAIN_MIN);
+    if max_log < LOG_MIN {
+        return want.min(available).max(1).min(available);
+    }
+    want.clamp(LOG_MIN, max_log)
+}
+
+/// Outline to draw before any key or click.
+/// An empty list keeps the open tab. A list with rows outlines the selected
+/// row, or the first row when nothing is selected yet.
+pub fn starting_focus(tab: Tab, rows: usize, selected: Option<usize>) -> Focus {
+    if rows == 0 {
+        return Focus::Tab(tab);
+    }
+    let index = selected.unwrap_or(0).min(rows - 1);
+    Focus::Row(index)
 }
 
 pub fn order(tab: Tab, rows: usize) -> Vec<Focus> {
@@ -284,6 +491,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn starting_focus_is_the_open_tab_then_the_first_row() {
+        assert_eq!(
+            starting_focus(Tab::Servers, 0, None),
+            Focus::Tab(Tab::Servers)
+        );
+        assert_eq!(starting_focus(Tab::Servers, 3, None), Focus::Row(0));
+        assert_eq!(starting_focus(Tab::Servers, 3, Some(2)), Focus::Row(2));
+        assert_eq!(
+            starting_focus(Tab::SshKeys, 0, Some(0)),
+            Focus::Tab(Tab::SshKeys)
+        );
+    }
+
+    #[test]
     fn focus_order_is_tabs_then_rows_then_detail_and_tab_wraps() {
         let order = order(Tab::Servers, 2);
         assert_eq!(
@@ -350,5 +571,42 @@ mod tests {
         assert_eq!(step_popup(PopupFocus::Force, true), PopupFocus::Cancel);
         assert_eq!(step_key(KeyFocus::Cancel, false), KeyFocus::Input);
         assert_eq!(step_key(KeyFocus::Input, true), KeyFocus::Cancel);
+    }
+
+    #[test]
+    fn a_split_stays_out_of_the_tab_order_and_cannot_collapse_a_pane() {
+        let items = order(Tab::Servers, 2);
+        assert!(items.iter().all(|item| !matches!(item, Focus::Split(_))));
+        assert_eq!(clamp_list_width(1, 100), PANE_MIN);
+        assert_eq!(clamp_list_width(99, 100), 100 - 1 - PANE_MIN);
+        assert_eq!(default_list_width(100), 42);
+        assert_eq!(clamp_log_rows(1, 32), LOG_MIN);
+        assert_eq!(clamp_log_rows(4, 32), LOG_DEFAULT);
+        // 1 + 3 + 1 chrome, and 6 rows stay with the main panes.
+        assert_eq!(clamp_log_rows(100, 32), 32 - 5 - 6);
+
+        let mut screen = Screen::default();
+        screen.prepare(Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 32,
+        });
+        assert_eq!(screen.list_width, 42);
+        assert_eq!(screen.columns_split.width, 1);
+        assert!(screen.columns_split.height >= 1);
+        assert_eq!(screen.rows_split.height, 1);
+        assert_eq!(screen.log.height, LOG_DEFAULT);
+        assert_eq!(screen.log.y + screen.log.height, screen.hints.y);
+        let columns = screen.columns_split.x;
+        screen.drag_columns_to(columns.saturating_add(8));
+        assert_eq!(screen.list_width, 50);
+        screen.drag_columns_to(0);
+        assert_eq!(screen.list_width, PANE_MIN);
+        let row = screen.rows_split.y;
+        screen.drag_rows_to(row.saturating_sub(2));
+        assert_eq!(screen.log_rows, LOG_DEFAULT + 2);
+        screen.drag_rows_to(0);
+        assert_eq!(screen.log_rows, 32 - 5 - 6);
     }
 }

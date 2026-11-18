@@ -3,8 +3,8 @@
 // under the GNU General Public License v3.0
 
 use crate::focus::{
-    DetailControl, Focus, KeyFocus, PopupFocus, ServerPane, Slot, Tab, order,
-    step, step_key, step_popup,
+    DetailControl, Focus, KeyFocus, PopupFocus, ServerPane, Slot, Split, Tab,
+    order, starting_focus, step, step_key, step_popup,
 };
 
 /// List tokens store the selection generation. Detail tokens store the row id.
@@ -322,6 +322,11 @@ pub struct App {
     pub host: String,
     pub tab: Tab,
     pub focus: Focus,
+    /// The open tab keeps the focused style while the startup outline is in
+    /// place. A key or a click clears it. Refreshes do not.
+    startup_outline: bool,
+    /// The outline Tab returns to after a divider has been focused.
+    split_return: Focus,
     pub force: bool,
     pub servers: Vec<ServerRow>,
     pub keys: Vec<SshRow>,
@@ -364,7 +369,9 @@ impl App {
         Self {
             host: host.into(),
             tab: Tab::Servers,
-            focus: Focus::Tab(Tab::Servers),
+            focus: starting_focus(Tab::Servers, 0, None),
+            startup_outline: true,
+            split_return: Focus::Tab(Tab::Servers),
             force: false,
             servers: Vec::new(),
             keys: Vec::new(),
@@ -403,6 +410,25 @@ impl App {
         }
     }
 
+    /// The open tab is still part of the startup outline, beside a list row.
+    pub fn startup_tab_focused(&self, tab: Tab) -> bool {
+        self.startup_outline
+            && self.tab == tab
+            && matches!(self.focus, Focus::Row(_))
+    }
+
+    fn settle_focus(&mut self) {
+        if !self.startup_outline || self.modal() != crate::focus::Modal::None {
+            return;
+        }
+        self.focus =
+            starting_focus(self.tab, self.row_count(), self.selected_index());
+    }
+
+    fn leave_startup_outline(&mut self) {
+        self.startup_outline = false;
+    }
+
     pub fn boot(&mut self) {
         self.queue_list();
     }
@@ -439,6 +465,7 @@ impl App {
     pub fn set_servers(&mut self, rows: Vec<ServerRow>, selected: u32) {
         self.servers_selected = Some(u64::from(selected));
         self.servers = rows;
+        self.settle_focus();
     }
 
     pub fn stop_accepting(&mut self) {
@@ -570,6 +597,7 @@ impl App {
     }
 
     pub fn focus_move(&mut self, backward: bool) {
+        self.leave_startup_outline();
         if let Some(popup) = self.power.as_mut() {
             popup.focus = step_popup(popup.focus, backward);
             return;
@@ -578,11 +606,29 @@ impl App {
             popup.focus = step_key(popup.focus, backward);
             return;
         }
+        // A divider is outside the Tab cycle. Resume from the control that
+        // was outlined before it, then take one step as usual.
+        if matches!(self.focus, Focus::Split(_)) {
+            self.focus = self.split_return;
+        }
         let items = order(self.tab, self.row_count());
         self.focus = step(&items, self.focus, backward);
     }
 
+    /// Outline a divider without inserting it into the Tab cycle.
+    pub fn focus_split(&mut self, split: Split) {
+        if self.modal() != crate::focus::Modal::None {
+            return;
+        }
+        self.leave_startup_outline();
+        if !matches!(self.focus, Focus::Split(_)) {
+            self.split_return = self.focus;
+        }
+        self.focus = Focus::Split(split);
+    }
+
     pub fn activate_focused(&mut self) {
+        self.leave_startup_outline();
         if let Some(focus) = self.power.as_ref().map(|popup| popup.focus) {
             self.activate_power(focus);
             return;
@@ -601,11 +647,13 @@ impl App {
             Focus::Row(index) => self.select_index(index),
             Focus::Detail(control) => self.activate_detail(control),
             Focus::ServerPane(pane) => self.activate_server_pane(pane),
+            Focus::Split(_) => {}
         }
     }
 
     pub fn activate_target(&mut self, target: crate::focus::Target) {
         use crate::focus::Target;
+        self.leave_startup_outline();
         match target {
             Target::Tab(tab) => {
                 self.focus = Focus::Tab(tab);
@@ -630,6 +678,7 @@ impl App {
             return;
         }
         if matches!(self.focus, Focus::ServerPane(_)) {
+            self.leave_startup_outline();
             self.move_server_line(delta);
             return;
         }
@@ -637,6 +686,7 @@ impl App {
         if count == 0 {
             return;
         }
+        self.leave_startup_outline();
         let current = self.selected_index().unwrap_or(0);
         let last = count - 1;
         let next = (current as i32 + delta).clamp(0, last as i32) as usize;
@@ -1125,6 +1175,7 @@ impl App {
                     }
                 }
                 self.normalize_focus();
+                self.settle_focus();
                 self.park_list();
             }
             Err(err) => self.report_server_error(silent, err),
@@ -1146,6 +1197,7 @@ impl App {
                 });
                 self.banner_ok(loaded("ssh keys", self.keys.len()));
                 self.normalize_focus();
+                self.settle_focus();
                 self.park_list();
             }
             Err(err) => self.banner_error(err),
@@ -1172,6 +1224,7 @@ impl App {
                 }
                 self.banner_ok(loaded("locations", self.locations.len()));
                 self.normalize_focus();
+                self.settle_focus();
                 self.park_list();
             }
             Err(err) => self.banner_error(err),
@@ -1198,6 +1251,7 @@ impl App {
                 }
                 self.banner_ok(loaded("zones", self.zones.len()));
                 self.normalize_focus();
+                self.settle_focus();
                 self.park_list();
             }
             Err(err) => self.banner_error(err),
@@ -1333,6 +1387,7 @@ impl App {
                 self.account = Some(pane);
                 self.banner_ok("account loaded");
                 self.normalize_focus();
+                self.settle_focus();
             }
             Err(err) => self.banner_error(err),
         }
@@ -1486,6 +1541,9 @@ impl App {
 
     fn normalize_focus(&mut self) {
         if self.power.is_some() || self.key.is_some() {
+            return;
+        }
+        if matches!(self.focus, Focus::Split(_)) {
             return;
         }
         let items = order(self.tab, self.row_count());
@@ -1819,6 +1877,32 @@ mod tests {
         app.servers_selected = ids.first().copied().map(u64::from);
         app.tab = Tab::Servers;
         app
+    }
+
+    #[test]
+    fn the_startup_outline_is_the_tab_then_the_first_row() {
+        let mut app = App::new("vapi2.netactuate.com");
+        assert_eq!(app.focus, Focus::Tab(Tab::Servers));
+        assert!(app.startup_outline);
+        app.boot();
+        let token = one_server_request(&mut app);
+        app.apply(Reply::Servers {
+            token,
+            result: Ok(ServerBatch {
+                rows: vec![
+                    row(1001, ServerKind::Virtual),
+                    row(1002, ServerKind::Virtual),
+                ],
+                warning: None,
+            }),
+        });
+        assert_eq!(app.focus, Focus::Row(0));
+        assert_eq!(app.servers_selected, Some(1001));
+        assert!(app.startup_tab_focused(Tab::Servers));
+        app.focus_move(false);
+        assert!(!app.startup_outline);
+        assert_eq!(app.focus, Focus::Row(1));
+        assert!(!app.startup_tab_focused(Tab::Servers));
     }
 
     #[test]

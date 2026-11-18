@@ -3,58 +3,75 @@
 // under the GNU General Public License v3.0
 
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Layout, Position, Rect};
+use ratatui::layout::{Alignment, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::focus::{
     DetailControl, Focus, KeyFocus, Modal, PopupFocus, Screen, ServerPane,
-    Slot, TABS, Tab, Target,
+    Slot, Split, TABS, Tab, Target,
 };
 use crate::model::{
     App, Field, Level, Pane, Section, ServerKind, ServerRow,
     power_confirm_text, short_fingerprint,
 };
 
+/// Rainfrog's frame and palette: plain box lines, green on the focused pane,
+/// light gray on the others, and named ANSI colors rather than a custom fill.
+/// Unfocused text stays bright enough to read. It is not dimmed, and it is
+/// not the green bold style used for focus.
 mod theme {
-    use ratatui::style::Color;
+    use ratatui::style::{Color, Modifier, Style};
 
-    pub const BG: Color = Color::Rgb(12, 14, 18);
-    pub const BAR: Color = Color::Rgb(20, 24, 31);
-    pub const TEXT: Color = Color::Rgb(230, 237, 243);
-    pub const MUTED: Color = Color::Rgb(139, 149, 163);
-    pub const LINE: Color = Color::Rgb(44, 52, 66);
-    pub const PANEL: Color = Color::Rgb(16, 20, 26);
-    pub const CONTROL: Color = Color::Rgb(22, 27, 34);
-    pub const CONTROL_EDGE: Color = Color::Rgb(92, 103, 115);
-    pub const ACTIVE: Color = Color::Rgb(26, 49, 72);
-    pub const ACTIVE_EDGE: Color = Color::Rgb(109, 142, 174);
-    pub const ACCENT: Color = Color::Rgb(185, 215, 245);
-    pub const FOCUS: Color = Color::Rgb(230, 180, 34);
-    pub const OK: Color = Color::Rgb(143, 212, 164);
-    pub const WARN: Color = Color::Rgb(224, 176, 122);
-    pub const ERR: Color = Color::Rgb(224, 122, 122);
-    pub const BRIGHT: Color = Color::Rgb(244, 248, 252);
+    pub const TEXT: Color = Color::Reset;
+    pub const GREEN: Color = Color::Green;
+    pub const YELLOW: Color = Color::Yellow;
+    pub const BLUE: Color = Color::Blue;
+    pub const RED: Color = Color::Red;
+    /// ANSI white. A visible light gray, not bright-black.
+    pub const GRAY: Color = Color::Gray;
+    /// Bright white for words that must be read while a pane is unfocused.
+    pub const WHITE: Color = Color::White;
+    pub const LIGHT_BLUE: Color = Color::LightBlue;
+
+    pub fn focus_edge() -> Style {
+        Style::default().fg(GREEN)
+    }
+
+    /// Unfocused rules and inactive tab outlines. Light gray, with no dim.
+    pub fn quiet_edge() -> Style {
+        Style::default().fg(GRAY)
+    }
+
+    pub fn rule(focused: bool) -> Style {
+        if focused {
+            focus_edge().add_modifier(Modifier::BOLD)
+        } else {
+            quiet_edge()
+        }
+    }
+
+    /// Labels and other secondary words. Lighter than the old dark gray.
+    pub fn label() -> Style {
+        Style::default().fg(GRAY)
+    }
+
+    /// Body text that is not the focused green row.
+    pub fn reading() -> Style {
+        Style::default().fg(WHITE)
+    }
 }
 
 pub fn render(frame: &mut Frame<'_>, app: &mut App, screen: &mut Screen) {
     screen.reset_hits();
-    let area = frame.area();
-    fill(frame, area, theme::BG);
-    let chunks = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(3),
-        Constraint::Min(0),
-        Constraint::Length(LOG_ROWS),
-        Constraint::Length(1),
-    ])
-    .split(area);
-    render_top(frame, chunks[0], app);
-    render_tabs(frame, chunks[1], app, screen);
-    render_body(frame, chunks[2], app, screen);
-    render_log(frame, chunks[3], app);
-    render_hints(frame, chunks[4]);
+    screen.prepare(frame.area());
+    render_top(frame, screen.top, app);
+    render_tabs(frame, screen.tabs, app, screen);
+    render_body(frame, screen.body, app, screen);
+    render_log(frame, screen.log, app);
+    render_hints(frame, screen.hints);
+    let area = screen.area;
     match app.modal() {
         Modal::Power => {
             dim(frame, area);
@@ -69,7 +86,6 @@ pub fn render(frame: &mut Frame<'_>, app: &mut App, screen: &mut Screen) {
 }
 
 fn render_top(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    fill(frame, area, theme::BAR);
     let brand = " rnatui";
     let host = clip(&app.host, area.width.saturating_sub(16) as usize);
     let right = format!("api  {host}");
@@ -79,30 +95,26 @@ fn render_top(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Span::styled(
             brand,
             Style::default()
-                .fg(theme::TEXT)
-                .bg(theme::BAR)
+                .fg(theme::GREEN)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" ".repeat(gap), Style::default().bg(theme::BAR)),
-        Span::styled("api  ", Style::default().fg(theme::MUTED).bg(theme::BAR)),
-        Span::styled(host, Style::default().fg(theme::TEXT).bg(theme::BAR)),
+        Span::raw(" ".repeat(gap)),
+        Span::styled("api  ", theme::label()),
+        Span::styled(host, Style::default().fg(theme::TEXT)),
     ]);
-    frame.render_widget(
-        Paragraph::new(line).style(Style::default().bg(theme::BAR)),
-        area,
-    );
+    frame.render_widget(Paragraph::new(line), area);
 }
 
 fn render_tabs(
     frame: &mut Frame<'_>, area: Rect, app: &App, screen: &mut Screen,
 ) {
-    fill(frame, area, theme::BAR);
     let labels = TABS.map(Tab::label);
     let row = layout_tabs(area, &labels, true);
-    paint_tab_shelf(frame, area, theme::BAR);
+    paint_tab_shelf(frame, area);
     for (tab, rect) in TABS.into_iter().zip(row) {
         let open = app.tab == tab;
-        let focused = page_focused(app) && app.focus == Focus::Tab(tab);
+        let focused = page_focused(app)
+            && (app.focus == Focus::Tab(tab) || app.startup_tab_focused(tab));
         paint_tab(frame, rect, area, tab.label(), open, focused);
         screen.hit(Target::Tab(tab), rect);
     }
@@ -111,21 +123,166 @@ fn render_tabs(
 fn render_body(
     frame: &mut Frame<'_>, area: Rect, app: &mut App, screen: &mut Screen,
 ) {
-    if area.width == 0 || area.height == 0 {
+    if area.width < 3 || area.height < 2 {
         return;
     }
-    let columns = Layout::horizontal([
-        Constraint::Percentage(42),
-        Constraint::Length(1),
-        Constraint::Fill(1),
-    ])
-    .split(area);
-    fill(frame, columns[0], theme::PANEL);
-    fill(frame, columns[1], theme::LINE);
-    screen.list = columns[0];
-    screen.detail = columns[2];
-    render_list(frame, inset(columns[0], 1), app, screen);
-    render_detail(frame, inset(columns[2], 1), app, screen);
+    let list_width = screen.list_width;
+    let split_x = area.x.saturating_add(list_width);
+    let list_inner = Rect {
+        x: area.x.saturating_add(1),
+        y: area.y.saturating_add(1),
+        width: list_width.saturating_sub(1),
+        height: area.height.saturating_sub(2),
+    };
+    // One column of air on each side so the text does not sit on the rule.
+    // The list already keeps a gutter for its focus marker.
+    let detail_inner = Rect {
+        x: split_x.saturating_add(2),
+        y: area.y.saturating_add(1),
+        width: area.width.saturating_sub(list_width).saturating_sub(4),
+        height: area.height.saturating_sub(2),
+    };
+    // Scroll covers the pane interior, including the detail's side gutter.
+    // The rules themselves are the drag targets.
+    screen.list = list_inner;
+    screen.detail = Rect {
+        x: split_x.saturating_add(1),
+        y: detail_inner.y,
+        width: area.width.saturating_sub(list_width).saturating_sub(2),
+        height: detail_inner.height,
+    };
+    paint_split_frame(frame, area, list_width, app);
+    render_list(frame, list_inner, app, screen);
+    render_detail(frame, detail_inner, app, screen);
+}
+
+/// One plain box around the list and the detail, with a vertical rule between
+/// them. The bottom rule is the log split. Green marks the focused pane, the
+/// same way rainfrog greens the focused block. The other edges and titles
+/// stay a readable light gray or white.
+fn paint_split_frame(
+    frame: &mut Frame<'_>, area: Rect, list_width: u16, app: &App,
+) {
+    if area.width < 3 || area.height < 2 || list_width == 0 {
+        return;
+    }
+    let line = ratatui::symbols::line::NORMAL;
+    let page = page_focused(app);
+    // A row outlines the list. An empty list does too, while its open tab
+    // is the outline, so the pane is green before the first row arrives.
+    let list_on = page
+        && (matches!(app.focus, Focus::Row(_))
+            || (app.row_count() == 0 && app.focus == Focus::Tab(app.tab)));
+    let detail_on =
+        page && matches!(app.focus, Focus::Detail(_) | Focus::ServerPane(_));
+    let columns_on = page && matches!(app.focus, Focus::Split(Split::Columns));
+    let rows_on = page && matches!(app.focus, Focus::Split(Split::Rows));
+    let list_edge = if list_on {
+        theme::focus_edge()
+    } else {
+        theme::quiet_edge()
+    };
+    let detail_edge = if detail_on {
+        theme::focus_edge()
+    } else {
+        theme::quiet_edge()
+    };
+    let column_edge = if columns_on {
+        theme::rule(true)
+    } else if list_on || detail_on {
+        theme::focus_edge()
+    } else {
+        theme::quiet_edge()
+    };
+    let row_edge = theme::rule(rows_on);
+    let left = area.x;
+    let right = area.right().saturating_sub(1);
+    let top = area.y;
+    let bottom = area.bottom().saturating_sub(1);
+    let split = left
+        .saturating_add(list_width)
+        .clamp(left.saturating_add(1), right.saturating_sub(1));
+    let list_title = if list_on {
+        theme::focus_edge().add_modifier(Modifier::BOLD)
+    } else {
+        theme::reading()
+    };
+    let detail_title = if detail_on {
+        theme::focus_edge().add_modifier(Modifier::BOLD)
+    } else {
+        theme::reading()
+    };
+
+    paint_cell(frame, left, top, line.top_left, list_edge);
+    paint_cell(frame, split, top, line.horizontal_down, column_edge);
+    paint_cell(frame, right, top, line.top_right, detail_edge);
+    let foot = |side: Style| if rows_on { row_edge } else { side };
+    paint_cell(frame, left, bottom, line.bottom_left, foot(list_edge));
+    paint_cell(frame, split, bottom, line.horizontal_up, foot(column_edge));
+    paint_cell(frame, right, bottom, line.bottom_right, foot(detail_edge));
+    for x in left.saturating_add(1)..split {
+        paint_cell(frame, x, top, line.horizontal, list_edge);
+        paint_cell(frame, x, bottom, line.horizontal, foot(list_edge));
+    }
+    for x in split.saturating_add(1)..right {
+        paint_cell(frame, x, top, line.horizontal, detail_edge);
+        paint_cell(frame, x, bottom, line.horizontal, foot(detail_edge));
+    }
+    for y in top.saturating_add(1)..bottom {
+        paint_cell(frame, left, y, line.vertical, list_edge);
+        paint_cell(frame, split, y, line.vertical, column_edge);
+        paint_cell(frame, right, y, line.vertical, detail_edge);
+    }
+    paint_rule_label(
+        frame,
+        left,
+        split,
+        top,
+        &pane_label(app.tab.label()),
+        list_title,
+    );
+    paint_rule_label(
+        frame,
+        split,
+        right,
+        top,
+        &pane_label(detail_label(app.tab)),
+        detail_title,
+    );
+}
+
+fn pane_label(text: &str) -> String {
+    format!(" {text} ")
+}
+
+fn detail_label(tab: Tab) -> &'static str {
+    match tab {
+        Tab::Servers => "server",
+        Tab::SshKeys => "ssh key",
+        Tab::Locations => "location",
+        Tab::Dns => "zone",
+        Tab::Account => "account",
+    }
+}
+
+fn paint_rule_label(
+    frame: &mut Frame<'_>, start: u16, end: u16, y: u16, label: &str,
+    style: Style,
+) {
+    let room = usize::from(end.saturating_sub(start).saturating_sub(1));
+    if room == 0 {
+        return;
+    }
+    let text = clip(label, room);
+    let origin = start.saturating_add(1);
+    for (offset, ch) in text.chars().enumerate() {
+        let x =
+            origin.saturating_add(u16::try_from(offset).unwrap_or(u16::MAX));
+        if x >= end {
+            break;
+        }
+        paint_char(frame, x, y, ch, style);
+    }
 }
 
 fn render_list(
@@ -156,30 +313,27 @@ fn render_list(
         } else {
             "Nothing here"
         };
-        paint_plain(
-            frame,
-            row_rect(body, 0),
-            message,
-            Style::default().fg(theme::MUTED).bg(theme::PANEL),
-        );
+        let style = if app.activity().is_some() {
+            Style::default().fg(theme::GREEN)
+        } else {
+            theme::reading()
+        };
+        paint_plain(frame, row_rect(body, 0), message, style);
         return;
     }
-    for (offset, (index, line, bg)) in rows
+    for (offset, (index, line)) in rows
         .into_iter()
         .skip(app.list_scroll)
         .take(window)
         .enumerate()
     {
         let rect = row_rect(body, offset as u16);
-        frame.render_widget(
-            Paragraph::new(line).style(Style::default().bg(bg)),
-            rect,
-        );
+        frame.render_widget(Paragraph::new(line), rect);
         screen.hit(Target::Row(index), rect);
     }
 }
 
-fn list_rows(app: &App, width: usize) -> Vec<(usize, Line<'static>, Color)> {
+fn list_rows(app: &App, width: usize) -> Vec<(usize, Line<'static>)> {
     let columns = list_columns(app.tab, width);
     match app.tab {
         Tab::Servers => app
@@ -292,30 +446,38 @@ fn list_columns(tab: Tab, width: usize) -> Vec<(&'static str, usize)> {
 
 fn text_row(
     app: &App, index: usize, cells: &[(String, usize)],
-) -> (usize, Line<'static>, Color) {
+) -> (usize, Line<'static>) {
     let selected = app.selected_index() == Some(index);
     let focused = page_focused(app) && app.focus == Focus::Row(index);
-    let bg = if selected {
-        theme::ACTIVE
+    // Green and bold on the focused row. A selected row whose pane is not
+    // focused stays reversed, on white, so the letters stay readable.
+    // Every other row is white, not dim and not green.
+    let style = if focused {
+        Style::default()
+            .fg(theme::GREEN)
+            .add_modifier(Modifier::BOLD)
+    } else if selected {
+        // Reversed white on black: the bar is light, and the letters stay
+        // readable whether the terminal swaps the colors or not.
+        Style::default()
+            .fg(theme::WHITE)
+            .bg(Color::Black)
+            .add_modifier(Modifier::REVERSED)
     } else {
-        theme::CONTROL
+        theme::reading()
     };
     let mut spans = Vec::new();
     let marker = if focused { "▌" } else { " " };
-    let marker_fg = if focused { theme::FOCUS } else { theme::TEXT };
-    spans.push(Span::styled(marker, Style::default().fg(marker_fg).bg(bg)));
+    spans.push(Span::styled(marker, style));
     for (text, width) in cells {
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(
-            pad(text, *width),
-            Style::default().fg(theme::TEXT).bg(bg),
-        ));
+        spans.push(Span::styled(" ", style));
+        spans.push(Span::styled(pad(text, *width), style));
     }
-    (index, Line::from(spans), bg)
+    (index, Line::from(spans))
 }
 
 fn header_line(tab: Tab, width: usize) -> Line<'static> {
-    let style = Style::default().fg(theme::MUTED).bg(theme::PANEL);
+    let style = theme::label();
     // Same gutter as the row focus marker, then the same cell widths.
     let mut spans = vec![Span::styled(" ", style)];
     for (label, column) in list_columns(tab, width) {
@@ -363,21 +525,11 @@ fn render_server(
             y = y.saturating_add(1);
         }
     } else {
-        paint_plain(
-            frame,
-            row_at(area, y),
-            "Select a server",
-            Style::default().fg(theme::MUTED),
-        );
+        paint_plain(frame, row_at(area, y), "Select a server", theme::label());
         y = y.saturating_add(1);
     }
     if bottom.saturating_sub(y) >= 4 {
-        paint_plain(
-            frame,
-            row_at(area, y),
-            "power",
-            Style::default().fg(theme::MUTED),
-        );
+        paint_plain(frame, row_at(area, y), "power", theme::label());
         y = y.saturating_add(1);
         paint_power_buttons(frame, area, y, app, screen);
         y = y.saturating_add(3);
@@ -400,12 +552,7 @@ fn render_server_tail(
         if y >= bottom {
             break;
         }
-        paint_plain(
-            frame,
-            row_at(area, y),
-            text,
-            Style::default().fg(theme::MUTED),
-        );
+        paint_plain(frame, row_at(area, y), text, theme::label());
         y = y.saturating_add(1);
     }
     if y >= bottom {
@@ -456,7 +603,7 @@ fn paint_server_panes(
     }
     let labels = ServerPane::ALL.map(ServerPane::label);
     let row = layout_tabs(strip, &labels, false);
-    paint_tab_shelf(frame, strip, theme::BG);
+    paint_tab_shelf(frame, strip);
     for (pane, rect) in ServerPane::ALL.into_iter().zip(row) {
         let open = app.server_pane == pane;
         let focused = page_focused(app) && app.focus == Focus::ServerPane(pane);
@@ -474,7 +621,7 @@ fn render_server_lines(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         frame,
         row_rect(area, 0),
         pane_header(app.server_pane),
-        Style::default().fg(theme::MUTED),
+        theme::label(),
     );
     if area.height == 1 {
         app.server_line_window = 1;
@@ -507,12 +654,7 @@ fn render_server_lines(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
         } else {
             "none"
         };
-        paint_plain(
-            frame,
-            row_rect(body, 0),
-            message,
-            Style::default().fg(theme::MUTED),
-        );
+        paint_plain(frame, row_rect(body, 0), message, theme::label());
         return;
     }
     let start = usize::from(app.detail_scroll);
@@ -521,16 +663,19 @@ fn render_server_lines(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     for (offset, line) in lines.iter().skip(start).take(window).enumerate() {
         let index = start + offset;
         let marked = focused && index == app.server_line;
-        let (fg, bg) = if marked {
-            (theme::TEXT, theme::ACTIVE)
+        // Rainfrog's results cursor is a light-blue reversed row.
+        let style = if marked {
+            Style::default()
+                .fg(theme::LIGHT_BLUE)
+                .add_modifier(Modifier::REVERSED | Modifier::BOLD)
         } else {
-            (theme::TEXT, theme::BG)
+            Style::default().fg(theme::TEXT)
         };
         paint_plain(
             frame,
             row_rect(body, offset as u16),
             &pad(line, width),
-            Style::default().fg(fg).bg(bg),
+            style,
         );
     }
 }
@@ -563,12 +708,9 @@ fn server_field_lines(app: &App, server: &ServerRow) -> Vec<Line<'static>> {
 
 fn kind_line(kind: ServerKind) -> Line<'static> {
     Line::from(vec![
-        Span::styled(pad("kind", 12), Style::default().fg(theme::MUTED)),
+        Span::styled(pad("kind", 12), theme::label()),
         Span::styled(kind.label(), Style::default().fg(theme::TEXT)),
-        Span::styled(
-            format!("  {}", kind.command()),
-            Style::default().fg(theme::MUTED),
-        ),
+        Span::styled(format!("  {}", kind.command()), theme::label()),
     ])
 }
 
@@ -640,12 +782,7 @@ fn render_record(
 ) {
     let mut y = area.y;
     let Some(pane) = pane else {
-        paint_plain(
-            frame,
-            row_at(area, y),
-            "Select a row",
-            Style::default().fg(theme::MUTED),
-        );
+        paint_plain(frame, row_at(area, y), "Select a row", theme::label());
         return;
     };
     paint_title(frame, area, &mut y, &pane.title, &pane.subtitle);
@@ -771,8 +908,8 @@ fn render_power_popup(
     frame.render_widget(Clear, rect);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme::ACTIVE_EDGE))
-        .style(Style::default().bg(theme::CONTROL).fg(theme::TEXT));
+        .border_style(Style::default().fg(theme::YELLOW))
+        .style(Style::default().fg(theme::TEXT));
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
     if inner.width == 0 || inner.height == 0 {
@@ -781,7 +918,9 @@ fn render_power_popup(
     let title = Line::from(vec![
         Span::styled(
             popup.verb.title(),
-            Style::default().fg(theme::BRIGHT).bg(theme::ACTIVE),
+            Style::default()
+                .fg(theme::TEXT)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             pad_left(
@@ -789,7 +928,7 @@ fn render_power_popup(
                 inner.width.saturating_sub(popup.verb.title().len() as u16)
                     as usize,
             ),
-            Style::default().fg(theme::MUTED).bg(theme::ACTIVE),
+            theme::label(),
         ),
     ]);
     paint_line(frame, row_at(inner, inner.y), title);
@@ -805,7 +944,7 @@ fn render_power_popup(
             frame,
             row_at(inner, inner.y.saturating_add(2 + offset as u16)),
             line,
-            Style::default().fg(theme::TEXT).bg(theme::CONTROL),
+            Style::default().fg(theme::TEXT),
         );
     }
     let check_y = inner.y.saturating_add(7);
@@ -835,7 +974,7 @@ fn render_power_popup(
                 height: 1,
             },
             "adds --force",
-            Style::default().fg(theme::MUTED).bg(theme::CONTROL),
+            theme::label(),
         );
     }
     let button_y = inner.bottom().saturating_sub(3);
@@ -877,8 +1016,8 @@ fn render_key_popup(
     frame.render_widget(Clear, rect);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme::ACTIVE_EDGE))
-        .style(Style::default().bg(theme::CONTROL).fg(theme::TEXT));
+        .border_style(Style::default().fg(theme::YELLOW))
+        .style(Style::default().fg(theme::TEXT));
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
     if inner.height < 8 || inner.width < 8 {
@@ -889,14 +1028,16 @@ fn render_key_popup(
         row_at(inner, inner.y),
         Line::from(Span::styled(
             "New SSH key",
-            Style::default().fg(theme::BRIGHT).bg(theme::ACTIVE),
+            Style::default()
+                .fg(theme::TEXT)
+                .add_modifier(Modifier::BOLD),
         )),
     );
     paint_plain(
         frame,
         row_at(inner, inner.y.saturating_add(2)),
         "Public key file, or empty to generate ~/.ssh/id_ed25519",
-        Style::default().fg(theme::MUTED).bg(theme::CONTROL),
+        theme::label(),
     );
     let input = Rect {
         x: inner.x,
@@ -906,11 +1047,11 @@ fn render_key_popup(
     };
     let focused = popup.focus == KeyFocus::Input;
     let border = if focused {
-        theme::FOCUS
+        theme::focus_edge()
     } else {
-        theme::CONTROL_EDGE
+        theme::quiet_edge()
     };
-    paint_box(frame, input, "", theme::BG, theme::TEXT, border);
+    paint_box(frame, input, "", Style::default().fg(theme::TEXT), border);
     let text_area = Rect {
         x: input.x.saturating_add(1),
         y: input.y.saturating_add(1),
@@ -918,12 +1059,7 @@ fn render_key_popup(
         height: 1,
     };
     let shown = tail(&popup.text, text_area.width as usize);
-    paint_plain(
-        frame,
-        text_area,
-        &shown,
-        Style::default().fg(theme::TEXT).bg(theme::BG),
-    );
+    paint_plain(frame, text_area, &shown, Style::default().fg(theme::TEXT));
     if focused {
         let cursor_x = text_area.x.saturating_add(shown.chars().count() as u16);
         if cursor_x < text_area.right() {
@@ -998,8 +1134,6 @@ fn paint_popup_button(
     );
 }
 
-const LOG_ROWS: u16 = 4;
-
 fn render_log(frame: &mut Frame<'_>, area: Rect, app: &App) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -1008,13 +1142,13 @@ fn render_log(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let mut lines = Vec::new();
     for entry in app.status_lines() {
         let color = match entry.level {
-            Level::Error => theme::ERR,
-            Level::Ok => theme::OK,
+            Level::Error => theme::RED,
+            Level::Ok => theme::GREEN,
         };
         lines.push((clip(&entry.text, width), color));
     }
     if let Some(activity) = app.activity() {
-        lines.push((clip(activity, width), theme::MUTED));
+        lines.push((clip(activity, width), theme::GRAY));
     }
     let height = usize::from(area.height);
     let start = lines.len().saturating_sub(height);
@@ -1025,35 +1159,31 @@ fn render_log(frame: &mut Frame<'_>, area: Rect, app: &App) {
             frame,
             row_rect(area, (pad + offset) as u16),
             &format!(" {text}"),
-            Style::default().fg(color).bg(theme::BG),
+            Style::default().fg(color),
         );
     }
 }
 
 fn render_hints(frame: &mut Frame<'_>, area: Rect) {
-    fill(frame, area, theme::BAR);
-    let mut spans = vec![Span::styled(" ", Style::default().bg(theme::BAR))];
+    let mut spans = Vec::new();
     spans.extend(hint("Tab", "move"));
     spans.extend(hint("Shift-Tab", "back"));
     spans.extend(hint("Enter or Space", "activate"));
     spans.extend(hint("click", "activates"));
+    spans.extend(hint("-/=", "resize"));
     let line = Line::from(spans);
     frame.render_widget(
-        Paragraph::new(line).style(Style::default().bg(theme::BAR)),
+        Paragraph::new(line)
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(theme::BLUE)),
         area,
     );
 }
 
 fn hint(key: &str, word: &str) -> Vec<Span<'static>> {
     vec![
-        Span::styled(
-            key.to_string(),
-            Style::default().fg(theme::TEXT).bg(theme::BAR),
-        ),
-        Span::styled(
-            format!(" {word}  "),
-            Style::default().fg(theme::MUTED).bg(theme::BAR),
-        ),
+        Span::styled(key.to_string(), Style::default().fg(theme::BLUE)),
+        Span::styled(format!(" {word}  "), theme::label()),
     ]
 }
 
@@ -1073,7 +1203,7 @@ fn paint_title(
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" ".repeat(gap.max(1))),
-        Span::styled(subtitle, Style::default().fg(theme::MUTED)),
+        Span::styled(subtitle, theme::label()),
     ]);
     paint_line(frame, row_at(area, *y), line);
     *y = y.saturating_add(2);
@@ -1084,11 +1214,18 @@ fn paint_button(
     focused: bool, target: Target,
 ) {
     let border = if focused {
-        theme::FOCUS
+        theme::focus_edge()
     } else {
-        theme::CONTROL_EDGE
+        theme::quiet_edge()
     };
-    paint_box(frame, area, label, theme::CONTROL, theme::TEXT, border);
+    let text = if focused {
+        Style::default()
+            .fg(theme::TEXT)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme::TEXT)
+    };
+    paint_box(frame, area, label, text, border);
     screen.hit(target, area);
 }
 
@@ -1097,19 +1234,19 @@ fn paint_check(
     checked: bool, focused: bool, target: Target,
 ) {
     let border = if focused {
-        theme::FOCUS
+        theme::focus_edge()
     } else {
-        theme::CONTROL_EDGE
+        theme::quiet_edge()
+    };
+    let text = if focused {
+        Style::default()
+            .fg(theme::TEXT)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme::TEXT)
     };
     let mark = if checked { "[x]" } else { "[ ]" };
-    paint_box(
-        frame,
-        area,
-        &format!("{mark} {label}"),
-        theme::CONTROL,
-        theme::TEXT,
-        border,
-    );
+    paint_box(frame, area, &format!("{mark} {label}"), text, border);
     screen.hit(target, area);
 }
 
@@ -1119,15 +1256,12 @@ fn tab_width(label: &str) -> u16 {
 
 fn tab_colors(open: bool, focused: bool) -> (Color, Color, Color) {
     if focused {
-        (
-            if open { theme::ACTIVE } else { theme::CONTROL },
-            theme::BRIGHT,
-            theme::FOCUS,
-        )
+        (Color::Reset, theme::GREEN, theme::GREEN)
     } else if open {
-        (theme::ACTIVE, theme::BRIGHT, theme::ACCENT)
+        (Color::Reset, theme::WHITE, theme::WHITE)
     } else {
-        (theme::CONTROL, theme::TEXT, theme::CONTROL_EDGE)
+        // Inactive letters stay white. The outline is a visible light gray.
+        (Color::Reset, theme::WHITE, theme::GRAY)
     }
 }
 
@@ -1167,12 +1301,12 @@ fn layout_tabs(area: Rect, labels: &[&str], center: bool) -> Vec<Rect> {
     placed
 }
 
-fn paint_tab_shelf(frame: &mut Frame<'_>, area: Rect, canvas: Color) {
+fn paint_tab_shelf(frame: &mut Frame<'_>, area: Rect) {
     if area.height < 3 || area.width == 0 {
         return;
     }
     let y = area.y.saturating_add(2);
-    let style = Style::default().fg(theme::CONTROL_EDGE).bg(canvas);
+    let style = theme::quiet_edge();
     let horizontal = ratatui::symbols::line::NORMAL.horizontal;
     for x in area.x..area.right() {
         paint_cell(frame, x, y, horizontal, style);
@@ -1190,7 +1324,11 @@ fn paint_tab(
     let (bg, fg, border) = tab_colors(open, focused);
     let line = ratatui::symbols::line::NORMAL;
     let edge = Style::default().fg(border).bg(bg);
-    let text = Style::default().fg(fg).bg(bg);
+    let text = if focused {
+        Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(fg).bg(bg)
+    };
     let left = tab.x;
     let right = tab.right().saturating_sub(1);
     let top = tab.y;
@@ -1268,20 +1406,19 @@ fn paint_char(frame: &mut Frame<'_>, x: u16, y: u16, ch: char, style: Style) {
 }
 
 fn paint_box(
-    frame: &mut Frame<'_>, area: Rect, label: &str, bg: Color, fg: Color,
-    border: Color,
+    frame: &mut Frame<'_>, area: Rect, label: &str, text: Style, border: Style,
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border))
-        .style(Style::default().bg(bg).fg(fg));
+        .border_style(border)
+        .style(text);
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if inner.width > 0 && inner.height > 0 && !label.is_empty() {
         frame.render_widget(
             Paragraph::new(label)
                 .alignment(Alignment::Center)
-                .style(Style::default().fg(fg).bg(bg)),
+                .style(text),
             inner,
         );
     }
@@ -1323,16 +1460,13 @@ fn extend_sections(lines: &mut Vec<Line<'static>>, sections: &[Section]) {
 
 fn field_line(label: &str, value: &str, color: Color) -> Line<'static> {
     Line::from(vec![
-        Span::styled(pad(label, 12), Style::default().fg(theme::MUTED)),
+        Span::styled(pad(label, 12), theme::label()),
         Span::styled(value.to_string(), Style::default().fg(color)),
     ])
 }
 
 fn muted_line(text: &str) -> Line<'static> {
-    Line::from(Span::styled(
-        text.to_string(),
-        Style::default().fg(theme::MUTED),
-    ))
+    Line::from(Span::styled(text.to_string(), theme::label()))
 }
 
 fn paint_line(frame: &mut Frame<'_>, area: Rect, line: Line<'_>) {
@@ -1349,21 +1483,12 @@ fn paint_plain(frame: &mut Frame<'_>, area: Rect, text: &str, style: Style) {
     frame.render_widget(Paragraph::new(text).style(style), area);
 }
 
-fn fill(frame: &mut Frame<'_>, area: Rect, color: Color) {
-    frame.render_widget(
-        Block::default().style(Style::default().bg(color)),
-        area,
-    );
-}
-
 fn dim(frame: &mut Frame<'_>, area: Rect) {
     let buffer = frame.buffer_mut();
     for y in area.y..area.bottom() {
         for x in area.x..area.right() {
             if let Some(cell) = buffer.cell_mut((x, y)) {
-                cell.set_style(
-                    Style::default().fg(theme::MUTED).bg(Color::Rgb(6, 7, 10)),
-                );
+                cell.set_style(cell.style().add_modifier(Modifier::DIM));
             }
         }
     }
@@ -1380,12 +1505,12 @@ fn detail_focused(app: &App, control: DetailControl) -> bool {
 fn state_color(state: &str) -> Color {
     let value = state.to_ascii_lowercase();
     if value.contains("run") || value.contains("active") || value == "ok" {
-        theme::OK
+        theme::GREEN
     } else if value.contains("stop")
         || value.contains("off")
         || value.contains("shut")
     {
-        theme::WARN
+        theme::YELLOW
     } else {
         theme::TEXT
     }
@@ -1415,15 +1540,6 @@ fn row_rect(area: Rect, offset: u16) -> Rect {
         y: area.y.saturating_add(offset),
         width: area.width,
         height: 1,
-    }
-}
-
-fn inset(area: Rect, by: u16) -> Rect {
-    Rect {
-        x: area.x.saturating_add(by),
-        y: area.y,
-        width: area.width.saturating_sub(by.saturating_mul(2)),
-        height: area.height,
     }
 }
 
@@ -1482,6 +1598,7 @@ mod tests {
     use crate::model::{PowerVerb, ServerKind, ServerRow};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::style::Modifier;
 
     fn column(line: &str, needle: &str) -> usize {
         let byte = line.find(needle).unwrap_or_else(|| {
@@ -1490,14 +1607,16 @@ mod tests {
         line[..byte].chars().count()
     }
 
-    fn view(app: &mut App) -> String {
+    fn draw(app: &mut App, screen: &mut Screen) -> ratatui::buffer::Buffer {
         let backend = TestBackend::new(100, 32);
         let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render(frame, app, screen)).unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    fn view(app: &mut App) -> String {
         let mut screen = Screen::default();
-        terminal
-            .draw(|frame| render(frame, app, &mut screen))
-            .unwrap();
-        let buffer = terminal.backend().buffer().clone();
+        let buffer = draw(app, &mut screen);
         let mut lines = String::new();
         for y in 0..buffer.area.height {
             for x in 0..buffer.area.width {
@@ -1665,5 +1784,203 @@ mod tests {
         assert!(lines[key - 4].contains("status 2"), "{text}");
         assert!(!text.contains("status 0"), "{text}");
         assert!(!text.contains("status 1"), "{text}");
+    }
+
+    #[test]
+    fn the_first_frame_is_already_focused() {
+        let mut app = App::new("vapi2.netactuate.com");
+        let mut screen = Screen::default();
+        let buffer = draw(&mut app, &mut screen);
+        let tab = tab_glyph(&buffer, &screen, Tab::Servers);
+        assert_eq!(tab.0, Color::Green, "servers tab");
+        assert!(tab.1.contains(Modifier::BOLD));
+        assert_eq!(
+            buffer.cell((0, screen.body.y)).unwrap().fg,
+            Color::Green,
+            "empty list pane"
+        );
+        let right = screen.body.right().saturating_sub(1);
+        assert_eq!(
+            buffer.cell((right, screen.body.y)).unwrap().fg,
+            Color::Gray
+        );
+
+        app.set_servers(
+            vec![
+                ServerRow::listed(
+                    1001,
+                    "web-01.example",
+                    "running",
+                    ServerKind::Virtual,
+                ),
+                ServerRow::listed(
+                    1002,
+                    "db-01.example",
+                    "stopped",
+                    ServerKind::Virtual,
+                ),
+            ],
+            1001,
+        );
+        let buffer = draw(&mut app, &mut screen);
+        let tab = tab_glyph(&buffer, &screen, Tab::Servers);
+        assert_eq!(tab.0, Color::Green, "open tab stays focused");
+        assert!(tab.1.contains(Modifier::BOLD));
+        assert_eq!(buffer.cell((0, screen.body.y)).unwrap().fg, Color::Green);
+        let row = glyph(&buffer, screen.list, "web-01");
+        assert_eq!(row.0, Color::Green, "first row");
+        assert!(row.1.contains(Modifier::BOLD));
+        let other = glyph(&buffer, screen.list, "db-01");
+        assert_eq!(other.0, Color::White);
+        assert!(!other.1.contains(Modifier::BOLD));
+    }
+
+    fn tab_glyph(
+        buffer: &ratatui::buffer::Buffer, screen: &Screen, tab: Tab,
+    ) -> (Color, Modifier) {
+        let hit = screen
+            .hits
+            .iter()
+            .find(|hit| hit.target == Target::Tab(tab))
+            .expect("tab");
+        glyph(buffer, hit.area, tab.label())
+    }
+
+    #[test]
+    fn the_frame_uses_plain_lines_and_green_marks_the_focused_pane() {
+        let mut app = sample();
+        let mut screen = Screen::default();
+        let buffer = draw(&mut app, &mut screen);
+        let split_x = screen.columns_split.x;
+        let top = screen.body.y;
+        let bottom = screen.rows_split.y;
+        assert_eq!(screen.columns_split.width, 1);
+        assert!(screen.columns_split.height >= 1);
+        assert_eq!(screen.rows_split.height, 1);
+        assert_eq!(buffer.cell((0, top)).unwrap().symbol(), "┌");
+        assert_eq!(buffer.cell((split_x, top)).unwrap().symbol(), "┬");
+        assert_eq!(
+            buffer
+                .cell((split_x, top.saturating_add(2)))
+                .unwrap()
+                .symbol(),
+            "│"
+        );
+        assert_eq!(buffer.cell((0, bottom)).unwrap().symbol(), "└");
+        assert_eq!(buffer.cell((split_x, bottom)).unwrap().symbol(), "┴");
+        assert_eq!(buffer.cell((1, bottom)).unwrap().symbol(), "─");
+        assert!(screen.list_width >= 20);
+        let detail = screen.body.width - screen.list_width - 1;
+        assert!(detail >= 20);
+        assert!(screen.log.height >= 3);
+        assert_eq!(screen.log.y + screen.log.height, screen.hints.y);
+
+        app.focus = Focus::Row(0);
+        let buffer = draw(&mut app, &mut screen);
+        assert_eq!(buffer.cell((0, screen.body.y)).unwrap().fg, Color::Green);
+        assert_eq!(
+            buffer
+                .cell((screen.columns_split.x, screen.body.y))
+                .unwrap()
+                .fg,
+            Color::Green
+        );
+        let right = screen.body.right().saturating_sub(1);
+        let quiet = buffer.cell((right, screen.body.y)).unwrap();
+        assert_eq!(quiet.fg, Color::Gray);
+        assert!(!quiet.modifier.contains(Modifier::DIM));
+
+        screen.list_width = 1;
+        screen.log_rows = 100;
+        let _ = draw(&mut app, &mut screen);
+        assert!(screen.list_width >= 20);
+        assert!(screen.log_rows >= 3);
+        assert!(screen.body.height >= 6);
+    }
+
+    #[test]
+    fn unfocused_text_stays_readable_and_focus_stays_green() {
+        let mut app = sample();
+        app.servers.push(ServerRow::listed(
+            1002,
+            "db-01.example",
+            "stopped",
+            ServerKind::Virtual,
+        ));
+        app.focus = Focus::Row(0);
+        let mut screen = Screen::default();
+        let buffer = draw(&mut app, &mut screen);
+
+        let ssh = screen
+            .hits
+            .iter()
+            .find(|hit| hit.target == Target::Tab(Tab::SshKeys))
+            .expect("ssh tab");
+        let outline = buffer.cell((ssh.area.x, ssh.area.y)).unwrap();
+        assert_eq!(outline.fg, Color::Gray, "inactive tab outline");
+        assert!(!outline.modifier.contains(Modifier::DIM));
+        let letter = glyph(&buffer, ssh.area, "SSH");
+        assert_eq!(letter.0, Color::White, "inactive tab label");
+        assert!(!letter.1.contains(Modifier::DIM));
+        assert!(!letter.1.contains(Modifier::BOLD));
+
+        let label = glyph(&buffer, screen.detail, "fqdn");
+        assert_eq!(label.0, Color::Gray, "field label");
+        assert!(!label.1.contains(Modifier::DIM));
+
+        let other = glyph(&buffer, screen.list, "db-01");
+        assert_eq!(other.0, Color::White, "unfocused row");
+        assert!(!other.1.contains(Modifier::REVERSED));
+        assert!(!other.1.contains(Modifier::DIM));
+        assert!(!other.1.contains(Modifier::BOLD));
+
+        let focused_row = glyph(&buffer, screen.list, "web-01");
+        assert_eq!(focused_row.0, Color::Green);
+        assert!(focused_row.1.contains(Modifier::BOLD));
+
+        let title = glyph(&buffer, screen.body, "server");
+        assert_ne!(title.0, Color::Green, "unfocused pane title");
+        assert!(!title.1.contains(Modifier::DIM));
+
+        app.focus = Focus::Detail(DetailControl::On);
+        let buffer = draw(&mut app, &mut screen);
+        let selected = glyph(&buffer, screen.list, "web-01");
+        assert_eq!(selected.0, Color::White, "selected row foreground");
+        assert!(selected.1.contains(Modifier::REVERSED));
+        assert!(!selected.1.contains(Modifier::DIM));
+        assert_ne!(selected.0, Color::Green);
+    }
+
+    fn glyph(
+        buffer: &ratatui::buffer::Buffer, area: Rect, needle: &str,
+    ) -> (Color, Modifier) {
+        let chars: Vec<char> = needle.chars().collect();
+        for y in area.y..area.bottom() {
+            let mut matched = 0usize;
+            let mut start = area.x;
+            for x in area.x..area.right() {
+                let cell = buffer.cell((x, y)).unwrap();
+                let ch = cell.symbol().chars().next().unwrap_or(' ');
+                if matched < chars.len() && ch == chars[matched] {
+                    if matched == 0 {
+                        start = x;
+                    }
+                    matched += 1;
+                    if matched == chars.len() {
+                        let first = buffer.cell((start, y)).unwrap();
+                        return (first.fg, first.modifier);
+                    }
+                } else if ch == chars[0] {
+                    start = x;
+                    matched = 1;
+                    if chars.len() == 1 {
+                        return (cell.fg, cell.modifier);
+                    }
+                } else {
+                    matched = 0;
+                }
+            }
+        }
+        panic!("{needle} missing");
     }
 }

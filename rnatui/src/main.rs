@@ -106,7 +106,7 @@ async fn event_loop(
         terminal.draw(|frame| ui::render(frame, app, &mut screen))?;
         let action = tokio::select! {
             event = events.next() => match event {
-                Some(Ok(event)) => on_event(app, &screen, event),
+                Some(Ok(event)) => on_event(app, &mut screen, event),
                 Some(Err(err)) => return Err(anyhow::anyhow!("terminal input: {err}")),
                 None => Action::Quit,
             },
