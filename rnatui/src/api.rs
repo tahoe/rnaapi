@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use rnaapi::NaClient;
 use rnaapi::endpoints::{
-    CancelPackage, ContractUsage, DedicatedAction, Details, IPv4, IPv6, Image,
+    ContractUsage, DedicatedAction, DeleteServer, Details, IPv4, IPv6, Image,
     Invoices, Location, MetalServer, MonthlyBw, Package, Plan, Record,
     RecordBody, RecordUpdate, SSHKeys, Server, ServerBuild, ServerBuildRequest,
     ServerPower, Sizes, SrvJob, SrvStatus, SshKeyBody, Zone, ZoneBody,
@@ -509,30 +509,10 @@ async fn run_write(client: &NaClient, op: WriteOp) -> Result<String, String> {
                     .map_err(|err| err.to_string())?;
             Ok(server_build_line("server rebuilt", Some(&fqdn), &created))
         }
-        WriteOp::DeleteServer {
-            mbpkgid,
-            fqdn,
-            cancel_type,
-            contract_id,
-            package,
-            plan_id,
-            pkg_id,
-            host: _,
-        } => {
-            Package::cancel(
-                client,
-                &cancel_package_body(
-                    &cancel_type,
-                    contract_id,
-                    mbpkgid,
-                    package.as_deref(),
-                    &fqdn,
-                    plan_id,
-                    pkg_id,
-                ),
-            )
-            .await
-            .map_err(|err| err.to_string())?;
+        WriteOp::DeleteServer { mbpkgid, fqdn, .. } => {
+            Package::cancel(client, &restored_delete_body())
+                .await
+                .map_err(|err| err.to_string())?;
             Ok(format!("server deleted: {fqdn} mbpkgid {mbpkgid}"))
         }
         WriteOp::CreateZone {
@@ -827,28 +807,12 @@ fn key_choice(key: &SSHKeys) -> Choice {
     }
 }
 
-/// Confirm posts `Package::cancel` (`cloud/package/cancel`).
-/// `package` is the plan name. `domU_package` and `plan_id` are both
-/// `Server::plan_id`. `pkg_id` is `Server::pkg_id` written as a string.
-/// An empty name or hostname is omitted. `comments` is always JSON null.
-/// `password` stays unset. `host` is not on this body.
-#[allow(clippy::too_many_arguments)]
-fn cancel_package_body(
-    cancel_type: &str, contract_id: i64, mbpkgid: u32, package: Option<&str>,
-    fqdn: &str, plan_id: Option<u32>, pkg_id: Option<u32>,
-) -> CancelPackage {
-    CancelPackage {
-        mbpkgid: i64::from(mbpkgid),
-        domu_package: plan_id,
-        comments: None,
-        cancel_type: cancel_type.to_string(),
-        agree: true,
+/// Earlier `DeleteServer`: the three optional fields stay unset, so the JSON is `{}`.
+fn restored_delete_body() -> DeleteServer {
+    DeleteServer {
+        cancel_billing: None,
+        force_password: None,
         password: None,
-        contract_id: Some(contract_id),
-        fqdn: plan_name(Some(fqdn)),
-        package: plan_name(package),
-        pkg_id: pkg_id.map(|id| id.to_string()),
-        plan_id,
     }
 }
 
@@ -1319,71 +1283,23 @@ mod tests {
     }
 
     #[test]
-    fn a_server_delete_sends_cancel_type_agree_and_contract_id() {
-        let body = super::cancel_package_body(
-            "Immediate",
-            7,
-            1001,
-            Some("VR4x1x25"),
-            "web-01.example",
-            Some(42),
-            Some(9),
-        );
-        assert_eq!(body.cancel_type, "Immediate");
-        assert!(body.agree);
-        assert_eq!(body.contract_id, Some(7));
-        assert_eq!(body.mbpkgid, 1001);
-        assert_eq!(body.package.as_deref(), Some("VR4x1x25"));
-        assert_eq!(body.fqdn.as_deref(), Some("web-01.example"));
-        assert_eq!(body.domu_package, Some(42));
-        assert_eq!(body.plan_id, Some(42));
-        assert_eq!(body.pkg_id.as_deref(), Some("9"));
-        assert!(body.comments.is_none());
-        assert!(body.password.is_none());
-        let value = serde_json::to_value(&body).unwrap();
-        assert_eq!(value["cancel_type"], "Immediate");
-        assert_eq!(value["agree"], true);
-        assert_eq!(value["contract_id"], 7);
-        assert_eq!(value["mbpkgid"], 1001);
-        assert_eq!(value["package"], "VR4x1x25");
-        assert_eq!(value["fqdn"], "web-01.example");
-        assert_eq!(value["domU_package"], 42);
-        assert_eq!(value["plan_id"], 42);
-        assert_eq!(value["pkg_id"], "9");
-        assert!(value["comments"].is_null());
+    fn a_server_delete_posts_the_body_that_removed_a_server() {
+        let value = serde_json::to_value(super::restored_delete_body()).unwrap();
+        assert_eq!(value, serde_json::json!({}));
         for absent in [
-            "password",
-            "domu_package",
-            "host",
-            "state",
-            "location",
-            "nics",
+            "cancel_type",
+            "agree",
+            "contract_id",
+            "mbpkgid",
+            "package",
+            "fqdn",
+            "domU_package",
+            "pkg_id",
+            "plan_id",
+            "comments",
         ] {
             assert!(value.get(absent).is_none(), "{absent} {value}");
         }
-        let omitted = super::cancel_package_body(
-            "Immediate",
-            7,
-            1001,
-            Some("  "),
-            "  ",
-            None,
-            None,
-        );
-        assert!(omitted.package.is_none());
-        assert!(omitted.fqdn.is_none());
-        assert!(omitted.domu_package.is_none());
-        assert!(omitted.plan_id.is_none());
-        assert!(omitted.pkg_id.is_none());
-        let omitted = serde_json::to_value(&omitted).unwrap();
-        assert!(omitted.get("package").is_none(), "{omitted}");
-        assert!(omitted.get("fqdn").is_none(), "{omitted}");
-        assert!(omitted.get("domU_package").is_none(), "{omitted}");
-        assert!(omitted.get("plan_id").is_none(), "{omitted}");
-        assert!(omitted.get("pkg_id").is_none(), "{omitted}");
-        assert!(omitted.get("host").is_none(), "{omitted}");
-        assert!(omitted["comments"].is_null());
-        assert_eq!(omitted["mbpkgid"], 1001);
     }
 
     #[test]
