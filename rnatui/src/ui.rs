@@ -9,8 +9,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
 use crate::focus::{
-    DetailControl, Focus, KeyFocus, Modal, PopupFocus, Screen, ServerPane,
-    Slot, Split, TABS, Tab, Target,
+    Action, DetailControl, Focus, Modal, PopupFocus, PromptFocus, Screen,
+    ServerPane, Slot, Split, TABS, Tab, Target,
 };
 use crate::model::{
     App, Field, Level, Pane, Section, ServerKind, ServerRow,
@@ -65,7 +65,7 @@ mod theme {
 
 pub fn render(frame: &mut Frame<'_>, app: &mut App, screen: &mut Screen) {
     screen.reset_hits();
-    screen.prepare(frame.area());
+    screen.layout(frame.area(), 0);
     render_top(frame, screen.top, app);
     render_tabs(frame, screen.tabs, app, screen);
     render_body(frame, screen.body, app, screen);
@@ -77,9 +77,9 @@ pub fn render(frame: &mut Frame<'_>, app: &mut App, screen: &mut Screen) {
             dim(frame, area);
             render_power_popup(frame, area, app, screen);
         }
-        Modal::Key => {
+        Modal::Prompt => {
             dim(frame, area);
-            render_key_popup(frame, area, app, screen);
+            render_prompt(frame, area, app, screen);
         }
         Modal::None => {}
     }
@@ -118,6 +118,123 @@ fn render_tabs(
         paint_tab(frame, rect, area, tab.label(), open, focused);
         screen.hit(Target::Tab(tab), rect);
     }
+}
+
+struct Command {
+    label: &'static str,
+    focused: bool,
+    target: Target,
+}
+
+fn left_commands(app: &App) -> Vec<Command> {
+    Action::left(app.tab)
+        .iter()
+        .copied()
+        .map(|action| command(app, action.label(), Target::Action(action)))
+        .collect()
+}
+
+fn right_commands(app: &App) -> Vec<Command> {
+    if app.selected_index().is_none() {
+        return Vec::new();
+    }
+    let mut commands = Vec::new();
+    if app.tab == Tab::Servers {
+        for control in
+            [DetailControl::On, DetailControl::Off, DetailControl::Reboot]
+        {
+            commands.push(command(
+                app,
+                control.label(),
+                Target::Detail(control),
+            ));
+        }
+    }
+    for action in Action::right(app.tab) {
+        commands.push(command(app, action.label(), Target::Action(*action)));
+    }
+    commands
+}
+
+fn command(app: &App, label: &'static str, target: Target) -> Command {
+    let focused = page_focused(app)
+        && match target {
+            Target::Action(action) => app.focus == Focus::Action(action),
+            Target::Detail(control) => app.focus == Focus::Detail(control),
+            _ => false,
+        };
+    Command {
+        label,
+        focused,
+        target,
+    }
+}
+
+/// One line of buttons at the top of a pane. Returns the rows it used.
+fn paint_command_row(
+    frame: &mut Frame<'_>, area: Rect, screen: &mut Screen,
+    commands: &[Command],
+) -> u16 {
+    if commands.is_empty() || area.height == 0 || area.width == 0 {
+        return 0;
+    }
+    let mut x = area.x;
+    for command in commands {
+        let width = button_width(command.label);
+        if x.saturating_add(width) > area.right() {
+            break;
+        }
+        let rect = Rect {
+            x,
+            y: area.y,
+            width,
+            height: 1,
+        };
+        paint_command(frame, screen, rect, command);
+        x = x.saturating_add(width).saturating_add(1);
+    }
+    1
+}
+
+/// A one-line control. Green and bold when it is the outline.
+fn paint_command(
+    frame: &mut Frame<'_>, screen: &mut Screen, area: Rect, command: &Command,
+) {
+    let focused = command.focused;
+    let label = command.label;
+    let text = if focused {
+        theme::focus_edge().add_modifier(Modifier::BOLD)
+    } else {
+        theme::reading()
+    };
+    let edge = if focused {
+        theme::focus_edge().add_modifier(Modifier::BOLD)
+    } else {
+        theme::quiet_edge()
+    };
+    let inner = usize::from(area.width.saturating_sub(2));
+    let word = clip(label, inner);
+    paint_char(frame, area.x, area.y, '[', edge);
+    let mut x = area.x.saturating_add(1);
+    for ch in word.chars() {
+        if x.saturating_add(1) >= area.right() {
+            break;
+        }
+        paint_char(frame, x, area.y, ch, text);
+        x = x.saturating_add(1);
+    }
+    while x.saturating_add(1) < area.right() {
+        paint_char(frame, x, area.y, ' ', text);
+        x = x.saturating_add(1);
+    }
+    if area.width > 1 {
+        paint_char(frame, area.right().saturating_sub(1), area.y, ']', edge);
+    }
+    screen.hit(command.target, area);
+}
+
+fn button_width(label: &str) -> u16 {
+    (label.chars().count() as u16).saturating_add(4).max(6)
 }
 
 fn render_body(
@@ -172,9 +289,14 @@ fn paint_split_frame(
     // is the outline, so the pane is green before the first row arrives.
     let list_on = page
         && (matches!(app.focus, Focus::Row(_))
+            || matches!(app.focus, Focus::Action(action) if action.is_left(app.tab))
             || (app.row_count() == 0 && app.focus == Focus::Tab(app.tab)));
-    let detail_on =
-        page && matches!(app.focus, Focus::Detail(_) | Focus::ServerPane(_));
+    let detail_on = page
+        && (matches!(app.focus, Focus::Detail(_) | Focus::ServerPane(_))
+            || matches!(
+                app.focus,
+                Focus::Action(action) if action.is_right(app.tab)
+            ));
     let columns_on = page && matches!(app.focus, Focus::Split(Split::Columns));
     let rows_on = page && matches!(app.focus, Focus::Split(Split::Rows));
     let list_edge = if list_on {
@@ -288,6 +410,13 @@ fn paint_rule_label(
 fn render_list(
     frame: &mut Frame<'_>, area: Rect, app: &mut App, screen: &mut Screen,
 ) {
+    if area.height == 0 || area.width == 0 {
+        return;
+    }
+    let commands = left_commands(app);
+    let used = paint_command_row(frame, area, screen, &commands);
+    let area = below(area, used);
+    screen.list = area;
     if area.height == 0 || area.width == 0 {
         return;
     }
@@ -487,15 +616,32 @@ fn header_line(tab: Tab, width: usize) -> Line<'static> {
     Line::from(spans)
 }
 
+fn below(area: Rect, rows: u16) -> Rect {
+    Rect {
+        x: area.x,
+        y: area.y.saturating_add(rows),
+        width: area.width,
+        height: area.height.saturating_sub(rows),
+    }
+}
+
 fn render_detail(
     frame: &mut Frame<'_>, area: Rect, app: &mut App, screen: &mut Screen,
 ) {
     if area.width == 0 || area.height == 0 {
         return;
     }
+    let commands = right_commands(app);
+    let used = paint_command_row(frame, area, screen, &commands);
+    let area = below(area, used);
+    screen.detail.y = screen.detail.y.saturating_add(used);
+    screen.detail.height = screen.detail.height.saturating_sub(used);
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
     match app.tab {
         Tab::Servers => render_server(frame, area, app, screen),
-        Tab::SshKeys => render_ssh(frame, area, app, screen),
+        Tab::SshKeys => render_ssh(frame, area, app),
         Tab::Locations => render_record(frame, area, app, location_pane(app)),
         Tab::Dns => render_record(frame, area, app, zone_pane(app)),
         Tab::Account => render_record(frame, area, app, account_pane(app)),
@@ -527,12 +673,6 @@ fn render_server(
     } else {
         paint_plain(frame, row_at(area, y), "Select a server", theme::label());
         y = y.saturating_add(1);
-    }
-    if bottom.saturating_sub(y) >= 4 {
-        paint_plain(frame, row_at(area, y), "power", theme::label());
-        y = y.saturating_add(1);
-        paint_power_buttons(frame, area, y, app, screen);
-        y = y.saturating_add(3);
     }
     render_server_tail(frame, remaining(area, y), app, screen);
 }
@@ -714,9 +854,7 @@ fn kind_line(kind: ServerKind) -> Line<'static> {
     ])
 }
 
-fn render_ssh(
-    frame: &mut Frame<'_>, area: Rect, app: &mut App, screen: &mut Screen,
-) {
+fn render_ssh(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
     let mut y = area.y;
     let bottom = area.bottom();
     if let Some(key) = app.selected_key().cloned() {
@@ -744,23 +882,6 @@ fn render_ssh(
         }
     } else {
         paint_title(frame, area, &mut y, "SSH keys", "new ssh");
-    }
-    if bottom.saturating_sub(y) >= 3 {
-        let rect = Rect {
-            x: area.x,
-            y,
-            width: 12.min(area.width),
-            height: 3,
-        };
-        paint_button(
-            frame,
-            screen,
-            rect,
-            DetailControl::NewKey.label(),
-            detail_focused(app, DetailControl::NewKey),
-            Target::Detail(DetailControl::NewKey),
-        );
-        y = y.saturating_add(3);
     }
     paint_scrolled(
         frame,
@@ -848,54 +969,6 @@ fn account_pane(app: &App) -> Option<Pane> {
         fields: Vec::new(),
         sections: Vec::new(),
     })
-}
-
-fn paint_power_buttons(
-    frame: &mut Frame<'_>, area: Rect, y: u16, app: &App, screen: &mut Screen,
-) {
-    let controls = [
-        (DetailControl::On, 6u16),
-        (DetailControl::Off, 7),
-        (DetailControl::Reboot, 10),
-    ];
-    let mut x = area.x;
-    for (control, width) in controls {
-        if x.saturating_add(width) > area.right() {
-            break;
-        }
-        let rect = Rect {
-            x,
-            y,
-            width,
-            height: 3,
-        };
-        paint_button(
-            frame,
-            screen,
-            rect,
-            control.label(),
-            detail_focused(app, control),
-            Target::Detail(control),
-        );
-        x = x.saturating_add(width).saturating_add(1);
-    }
-    let check = Rect {
-        x,
-        y,
-        width: 14.min(area.right().saturating_sub(x)),
-        height: 3,
-    };
-    if check.width >= 8 {
-        paint_check(
-            frame,
-            screen,
-            check,
-            DetailControl::Force.label(),
-            app.force,
-            detail_focused(app, DetailControl::Force),
-            Target::Detail(DetailControl::Force),
-        );
-    }
 }
 
 fn render_power_popup(
@@ -1006,13 +1079,18 @@ fn render_power_popup(
     );
 }
 
-fn render_key_popup(
+fn render_prompt(
     frame: &mut Frame<'_>, area: Rect, app: &mut App, screen: &mut Screen,
 ) {
-    let Some(popup) = app.key.clone() else {
+    let Some(popup) = app.prompt.clone() else {
         return;
     };
-    let rect = centered(area, 60, 14);
+    let height = if popup.fields.is_empty() {
+        12
+    } else {
+        (popup.fields.len() as u16 + 9).max(12)
+    };
+    let rect = centered(area, 68, height);
     frame.render_widget(Clear, rect);
     let block = Block::default()
         .borders(Borders::ALL)
@@ -1020,14 +1098,14 @@ fn render_key_popup(
         .style(Style::default().fg(theme::TEXT));
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
-    if inner.height < 8 || inner.width < 8 {
+    if inner.height < 6 || inner.width < 8 {
         return;
     }
     paint_line(
         frame,
         row_at(inner, inner.y),
         Line::from(Span::styled(
-            "New SSH key",
+            clip(&popup.title, inner.width as usize),
             Style::default()
                 .fg(theme::TEXT)
                 .add_modifier(Modifier::BOLD),
@@ -1035,50 +1113,53 @@ fn render_key_popup(
     );
     paint_plain(
         frame,
-        row_at(inner, inner.y.saturating_add(2)),
-        "Public key file, or empty to generate ~/.ssh/id_ed25519",
+        row_at(inner, inner.y.saturating_add(1)),
+        &clip(&popup.hint, inner.width as usize),
         theme::label(),
     );
-    let input = Rect {
-        x: inner.x,
-        y: inner.y.saturating_add(4),
-        width: inner.width,
-        height: 3,
-    };
-    let focused = popup.focus == KeyFocus::Input;
-    let border = if focused {
-        theme::focus_edge()
-    } else {
-        theme::quiet_edge()
-    };
-    paint_box(frame, input, "", Style::default().fg(theme::TEXT), border);
-    let text_area = Rect {
-        x: input.x.saturating_add(1),
-        y: input.y.saturating_add(1),
-        width: input.width.saturating_sub(2),
-        height: 1,
-    };
-    let shown = tail(&popup.text, text_area.width as usize);
-    paint_plain(frame, text_area, &shown, Style::default().fg(theme::TEXT));
-    if focused {
-        let cursor_x = text_area.x.saturating_add(shown.chars().count() as u16);
-        if cursor_x < text_area.right() {
-            frame.set_cursor_position(Position::new(cursor_x, text_area.y));
-        }
-    }
-    screen.hit(Target::Key(KeyFocus::Input), input);
     let button_y = inner.bottom().saturating_sub(3);
+    let mut y = inner.y.saturating_add(3);
+    for (index, field) in popup.fields.iter().enumerate() {
+        if y >= button_y {
+            break;
+        }
+        let focused = popup.focus == PromptFocus::Field(index);
+        let row = row_at(inner, y);
+        let style = if focused {
+            Style::default()
+                .fg(theme::GREEN)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme::TEXT)
+        };
+        let room = usize::from(row.width.saturating_sub(13));
+        let shown = tail(&field.shown(), room);
+        let line = format!("{} {}", pad(&field.label, 12), shown);
+        paint_plain(frame, row, &clip(&line, row.width as usize), style);
+        screen.hit(Target::Prompt(PromptFocus::Field(index)), row);
+        if focused && field.is_text() {
+            let cursor_x = row
+                .x
+                .saturating_add(13)
+                .saturating_add(shown.chars().count() as u16);
+            if cursor_x < row.right() {
+                frame.set_cursor_position(Position::new(cursor_x, row.y));
+            }
+        }
+        y = y.saturating_add(1);
+    }
+    let submit_width = button_width(&popup.submit_label).max(10);
     paint_popup_button(
         frame,
         screen,
         inner,
         button_y,
         PopupButton {
-            label: "Create",
-            width: 10,
+            label: &popup.submit_label,
+            width: submit_width,
             primary: true,
-            focused: popup.focus == KeyFocus::Create,
-            target: Target::Key(KeyFocus::Create),
+            focused: popup.focus == PromptFocus::Submit,
+            target: Target::Prompt(PromptFocus::Submit),
         },
     );
     paint_popup_button(
@@ -1090,8 +1171,8 @@ fn render_key_popup(
             label: "Cancel",
             width: 10,
             primary: false,
-            focused: popup.focus == KeyFocus::Cancel,
-            target: Target::Key(KeyFocus::Cancel),
+            focused: popup.focus == PromptFocus::Cancel,
+            target: Target::Prompt(PromptFocus::Cancel),
         },
     );
 }
@@ -1496,10 +1577,6 @@ fn dim(frame: &mut Frame<'_>, area: Rect) {
 
 fn page_focused(app: &App) -> bool {
     app.modal() == Modal::None
-}
-
-fn detail_focused(app: &App, control: DetailControl) -> bool {
-    page_focused(app) && app.focus == Focus::Detail(control)
 }
 
 fn state_color(state: &str) -> Color {
@@ -1949,6 +2026,160 @@ mod tests {
         assert!(selected.1.contains(Modifier::REVERSED));
         assert!(!selected.1.contains(Modifier::DIM));
         assert_ne!(selected.0, Color::Green);
+    }
+
+    #[test]
+    fn pane_actions_sit_above_the_list_and_the_detail() {
+        let mut app = sample();
+        let mut screen = Screen::default();
+        let buffer = draw(&mut app, &mut screen);
+        assert_eq!(screen.actions.height, 0);
+        assert_eq!(screen.body.y, screen.tabs.bottom());
+        let create = hit(&screen, Target::Action(Action::CreateServer));
+        assert!(screen.list.y > create.y, "create sits above the list rows");
+        assert!(create.x < screen.columns_split.x);
+        let header = hit_line(&buffer, "mbpkgid");
+        assert!(create.y < header);
+        let on = hit(&screen, Target::Detail(DetailControl::On));
+        let rebuild = hit(&screen, Target::Action(Action::RebuildServer));
+        let delete = hit(&screen, Target::Action(Action::DeleteServer));
+        assert!(on.x > screen.columns_split.x);
+        assert!(rebuild.x > on.x);
+        assert!(delete.x > rebuild.x);
+        assert_eq!(on.y, rebuild.y);
+        assert!(screen.detail.y > on.y);
+        assert!(
+            screen
+                .hits
+                .iter()
+                .all(|hit| hit.target != Target::Action(Action::NewKey))
+        );
+
+        app.focus = Focus::Action(Action::CreateServer);
+        let buffer = draw(&mut app, &mut screen);
+        let create = hit(&screen, Target::Action(Action::CreateServer));
+        assert_eq!(buffer.cell((create.x, create.y)).unwrap().fg, Color::Green);
+        let rebuild = hit(&screen, Target::Action(Action::RebuildServer));
+        assert_eq!(
+            buffer.cell((rebuild.x, rebuild.y)).unwrap().fg,
+            Color::Gray
+        );
+
+        let mut empty = App::new("vapi2.netactuate.com");
+        let mut screen = Screen::default();
+        let _ = draw(&mut empty, &mut screen);
+        assert!(
+            hit_opt(&screen, Target::Action(Action::CreateServer)).is_some()
+        );
+        assert!(hit_opt(&screen, Target::Detail(DetailControl::On)).is_none());
+        assert!(
+            hit_opt(&screen, Target::Action(Action::RebuildServer)).is_none()
+        );
+
+        app.tab = Tab::SshKeys;
+        app.focus = Focus::Tab(Tab::SshKeys);
+        app.set_keys(Vec::new(), None);
+        let mut screen = Screen::default();
+        let _ = draw(&mut app, &mut screen);
+        assert!(hit_opt(&screen, Target::Action(Action::NewKey)).is_some());
+        assert!(hit_opt(&screen, Target::Action(Action::UpdateKey)).is_none());
+        assert!(hit_opt(&screen, Target::Action(Action::DeleteKey)).is_none());
+        app.set_keys(
+            vec![crate::model::SshRow {
+                id: 9,
+                name: "laptop".into(),
+                fingerprint: "aa".into(),
+            }],
+            Some(9),
+        );
+        let _ = draw(&mut app, &mut screen);
+        let update = hit(&screen, Target::Action(Action::UpdateKey));
+        assert!(update.x > screen.columns_split.x);
+        assert!(hit_opt(&screen, Target::Action(Action::DeleteKey)).is_some());
+        let new_key = hit(&screen, Target::Action(Action::NewKey));
+        assert!(new_key.x < screen.columns_split.x);
+
+        app.tab = Tab::Dns;
+        app.set_zones(Vec::new(), None);
+        let _ = draw(&mut app, &mut screen);
+        assert!(hit_opt(&screen, Target::Action(Action::CreateZone)).is_some());
+        assert!(
+            hit_opt(&screen, Target::Action(Action::CreateRecord)).is_some()
+        );
+        assert!(hit_opt(&screen, Target::Action(Action::DeleteZone)).is_none());
+        app.set_zones(
+            vec![crate::model::ZoneRow {
+                id: 4,
+                name: "example.com".into(),
+                zone_type: "NATIVE".into(),
+            }],
+            Some(4),
+        );
+        let _ = draw(&mut app, &mut screen);
+        assert!(hit_opt(&screen, Target::Action(Action::DeleteZone)).is_some());
+        assert!(
+            hit_opt(&screen, Target::Action(Action::UpdateRecord)).is_some()
+        );
+        assert!(
+            hit_opt(&screen, Target::Action(Action::DeleteRecord)).is_some()
+        );
+        let zone = hit(&screen, Target::Action(Action::CreateZone));
+        let record = hit(&screen, Target::Action(Action::DeleteRecord));
+        assert!(zone.x < screen.columns_split.x);
+        assert!(record.x > screen.columns_split.x);
+
+        for tab in [Tab::Locations, Tab::Account] {
+            app.tab = tab;
+            let _ = draw(&mut app, &mut screen);
+            assert!(
+                screen.hits.iter().all(|hit| !matches!(
+                    hit.target,
+                    Target::Action(_) | Target::Detail(_)
+                )),
+                "{tab:?}"
+            );
+        }
+    }
+
+    fn hit(screen: &Screen, target: Target) -> ratatui::layout::Rect {
+        hit_opt(screen, target).expect("hit")
+    }
+
+    fn hit_opt(
+        screen: &Screen, target: Target,
+    ) -> Option<ratatui::layout::Rect> {
+        screen
+            .hits
+            .iter()
+            .find(|hit| hit.target == target)
+            .map(|hit| hit.area)
+    }
+
+    fn hit_line(buffer: &ratatui::buffer::Buffer, needle: &str) -> u16 {
+        let chars: Vec<char> = needle.chars().collect();
+        for y in 0..buffer.area.height {
+            let mut matched = 0usize;
+            for x in 0..buffer.area.width {
+                let ch = buffer
+                    .cell((x, y))
+                    .unwrap()
+                    .symbol()
+                    .chars()
+                    .next()
+                    .unwrap_or(' ');
+                if matched < chars.len() && ch == chars[matched] {
+                    matched += 1;
+                    if matched == chars.len() {
+                        return y;
+                    }
+                } else if ch == chars[0] {
+                    matched = 1;
+                } else {
+                    matched = 0;
+                }
+            }
+        }
+        panic!("{needle} missing");
     }
 
     fn glyph(

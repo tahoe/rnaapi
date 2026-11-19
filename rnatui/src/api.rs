@@ -6,9 +6,10 @@ use std::sync::Arc;
 
 use rnaapi::NaClient;
 use rnaapi::endpoints::{
-    DedicatedAction, Details, IPv4, IPv6, Image, Invoices, Location,
-    MetalServer, MonthlyBw, SSHKeys, Server, ServerPower, Sizes, SrvJob,
-    SrvStatus, SshKeyBody, Zone,
+    CancelPackage, ContractUsage, DedicatedAction, Details, IPv4, IPv6, Image,
+    Invoices, Location, MetalServer, MonthlyBw, Package, Plan, Record,
+    RecordBody, RecordUpdate, SSHKeys, Server, ServerBuild, ServerBuildRequest,
+    ServerPower, Sizes, SrvJob, SrvStatus, SshKeyBody, Zone, ZoneBody,
 };
 use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
@@ -16,9 +17,10 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::focus::ServerPane;
 use crate::model::LocationRow;
 use crate::model::{
-    DetailQuery, Field, Pane, PowerCommand, Reply, Request, Section,
-    ServerBatch, ServerDetail, ServerKind, ServerRow, SshRow, ZoneRow,
-    force_flag, merge_servers, power_call_text,
+    BuildChoices, BuildFields, Choice, DetailQuery, DnsRecord, Field, Listed,
+    Pane, PowerCommand, RecordFields, Reply, Request, Section, ServerBatch,
+    ServerDetail, ServerKind, ServerRow, SshRow, UsageBilling, WriteOp,
+    ZoneRow, ZoneView, force_flag, merge_servers, power_call_text,
 };
 
 pub fn spawn(
@@ -90,6 +92,18 @@ async fn perform(client: &NaClient, request: Request) -> Reply {
             token,
             result: load_account(client).await,
         },
+        Request::Catalog(token) => Reply::Catalog {
+            token,
+            result: Ok(load_catalog(client).await),
+        },
+        Request::UsageContract(token) => Reply::UsageContract {
+            token,
+            result: load_usage_contract(client).await,
+        },
+        Request::Write { token, op } => Reply::Write {
+            token,
+            result: run_write(client, op).await,
+        },
     }
 }
 
@@ -154,12 +168,18 @@ pub fn server_row(server: &Server) -> Option<ServerRow> {
     Some(ServerRow {
         mbpkgid: server.mbpkgid,
         fqdn: fallback(&server.fqdn, "(no name)"),
-        state: fallback(&server.state, &server.status),
+        state: fallback(
+            server.state.as_deref().unwrap_or(""),
+            server.status.as_deref().unwrap_or(""),
+        ),
         ip: server.ip.clone(),
         location: server.city.clone(),
-        status: server.status.clone(),
+        status: server.status.clone().unwrap_or_default(),
         kind: ServerKind::Virtual,
         metal_id: None,
+        package: plan_name(server.package.as_deref()),
+        plan_id: Some(server.plan_id),
+        pkg_id: Some(server.pkg_id),
     })
 }
 
@@ -174,6 +194,9 @@ pub fn metal_row(server: &MetalServer) -> Option<ServerRow> {
         status: server.package_status.clone(),
         kind: ServerKind::Dedicated,
         metal_id: u32::try_from(server.id).ok(),
+        package: None,
+        plan_id: None,
+        pkg_id: None,
     })
 }
 
@@ -197,19 +220,24 @@ async fn load_virtual(client: &NaClient, id: u32) -> ServerDetail {
         location: None,
         extras: Vec::new(),
         error: None,
+        plan_id: None,
+        pkg_id: None,
     };
     match server {
         Ok(server) => {
             detail.fqdn = Some(server.fqdn);
-            detail.state = Some(server.state);
-            detail.status = Some(server.status);
+            detail.plan_id = Some(server.plan_id);
+            detail.pkg_id = Some(server.pkg_id);
+            detail.state = server.state.filter(|text| !text.is_empty());
+            detail.status = server.status.filter(|text| !text.is_empty());
             detail.ip = Some(server.ip);
             detail.location = Some(server.city);
-            if !server.uptime.is_empty() {
-                detail.extras.push(Field::new("uptime", server.uptime));
+            if let Some(uptime) = server.uptime.filter(|text| !text.is_empty())
+            {
+                detail.extras.push(Field::new("uptime", uptime));
             }
-            if !server.ipv6.is_empty() {
-                detail.extras.push(Field::new("ipv6", server.ipv6));
+            if let Some(ipv6) = server.ipv6.filter(|text| !text.is_empty()) {
+                detail.extras.push(Field::new("ipv6", ipv6));
             }
         }
         Err(err) => detail.error = Some(format!("server: {err}")),
@@ -306,6 +334,8 @@ async fn load_dedicated(client: &NaClient, query: DetailQuery) -> ServerDetail {
             location: None,
             extras: Vec::new(),
             error: Some("dedicated server has no device id".into()),
+            plan_id: None,
+            pkg_id: None,
         };
     };
     match MetalServer::get(client, id).await {
@@ -317,6 +347,8 @@ async fn load_dedicated(client: &NaClient, query: DetailQuery) -> ServerDetail {
             location: Some(server.location.clone()),
             extras: metal_extras(&server),
             error: None,
+            plan_id: None,
+            pkg_id: None,
         },
         Err(err) => ServerDetail {
             fqdn: None,
@@ -326,6 +358,8 @@ async fn load_dedicated(client: &NaClient, query: DetailQuery) -> ServerDetail {
             location: None,
             extras: Vec::new(),
             error: Some(err.to_string()),
+            plan_id: None,
+            pkg_id: None,
         },
     }
 }
@@ -441,6 +475,432 @@ async fn create_ssh(
     ))
 }
 
+async fn run_write(client: &NaClient, op: WriteOp) -> Result<String, String> {
+    match op {
+        WriteOp::UpdateKey { id, name, material } => {
+            update_ssh(client, id, name, material).await
+        }
+        WriteOp::DeleteKey { id, name } => {
+            SSHKeys::delete(client, id)
+                .await
+                .map_err(|err| err.to_string())?;
+            Ok(format!("ssh key deleted: {name}"))
+        }
+        WriteOp::CreateServer(fields) => {
+            let fqdn = fields.fqdn.clone();
+            let created = Server::buy(client, &build_request(&fields))
+                .await
+                .map_err(|err| err.to_string())?;
+            Ok(server_build_line(
+                "server created",
+                fqdn.as_deref(),
+                &created,
+            ))
+        }
+        WriteOp::RebuildServer {
+            mbpkgid,
+            fqdn,
+            fields,
+        } => {
+            // `Server::rebuild` takes the server id. This screen calls it mbpkgid.
+            let created =
+                Server::rebuild(client, mbpkgid, &build_request(&fields))
+                    .await
+                    .map_err(|err| err.to_string())?;
+            Ok(server_build_line("server rebuilt", Some(&fqdn), &created))
+        }
+        WriteOp::DeleteServer {
+            mbpkgid,
+            fqdn,
+            cancel_type,
+            contract_id,
+            package,
+            plan_id,
+            pkg_id,
+            host: _,
+        } => {
+            Package::cancel(
+                client,
+                &cancel_package_body(
+                    &cancel_type,
+                    contract_id,
+                    mbpkgid,
+                    package.as_deref(),
+                    &fqdn,
+                    plan_id,
+                    pkg_id,
+                ),
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+            Ok(format!("server deleted: {fqdn} mbpkgid {mbpkgid}"))
+        }
+        WriteOp::CreateZone {
+            name,
+            zone_type,
+            ip,
+        } => {
+            let zone = Zone::create(
+                client,
+                &ZoneBody {
+                    name,
+                    zone_type,
+                    ip,
+                },
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+            Ok(format!("zone created: {}", zone.name))
+        }
+        WriteOp::DeleteZone { id, name } => {
+            Zone::delete(client, id)
+                .await
+                .map_err(|err| err.to_string())?;
+            Ok(format!("zone deleted: {name}"))
+        }
+        WriteOp::CreateRecord {
+            domain_id,
+            zone,
+            fields,
+        } => {
+            let record =
+                Record::create(client, &record_body(domain_id, &fields))
+                    .await
+                    .map_err(|err| err.to_string())?;
+            Ok(format!(
+                "record created: {} {} in {zone}",
+                record.name, record.record_type
+            ))
+        }
+        WriteOp::UpdateRecord {
+            domain_id,
+            zone,
+            fields,
+        } => {
+            let id = fields.id.ok_or_else(|| "id is required".to_string())?;
+            let record =
+                Record::update(client, &record_update(id, domain_id, &fields))
+                    .await
+                    .map_err(|err| err.to_string())?;
+            Ok(format!(
+                "record updated: {} {} in {zone}",
+                record.name, record.record_type
+            ))
+        }
+        WriteOp::DeleteRecord { id, name, zone } => {
+            Record::delete(client, id)
+                .await
+                .map_err(|err| err.to_string())?;
+            Ok(format!("record deleted: {name} in {zone}"))
+        }
+    }
+}
+
+async fn update_ssh(
+    client: &NaClient, id: u32, name: String, material: String,
+) -> Result<String, String> {
+    let ssh_key = tokio::task::spawn_blocking(move || {
+        crate::ssh::public_key_material(&material)
+    })
+    .await
+    .map_err(|_| "ssh key preparation stopped".to_string())?
+    .map_err(|err| format!("{err:#}").replace('\n', ": "))?;
+    let updated = SSHKeys::update(client, id, &SshKeyBody { name, ssh_key })
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(format!("ssh key updated: {}", updated.name))
+}
+
+async fn load_catalog(client: &NaClient) -> BuildChoices {
+    let (plans, images, locations, keys, contract) = tokio::join!(
+        Plan::list(client),
+        Image::list(client),
+        Location::list(client),
+        SSHKeys::list(client),
+        ContractUsage::get(client),
+    );
+    let (billing, billing_error) = billing_from_contract_get(contract);
+    BuildChoices {
+        plans: listed(plans, plan_choice),
+        images: listed(images, image_choice),
+        locations: listed(locations, location_choice),
+        keys: listed(keys, key_choice),
+        billing,
+        billing_error,
+    }
+}
+
+/// `package_billing` is `contract_type`. `package_billing_contract_id` is `id`.
+///
+/// `GET cloud/contract/usage` returns one `ContractUsage`, so that row is the
+/// only contract and is sent even when `is_free` is not 1. The type has no
+/// `allow_create` field. Several free rows prefer the one `contract_type` of
+/// "usage"; if that is still ambiguous, the first free row is used.
+fn billing_from_contract_get(
+    result: Result<ContractUsage, rnaapi::errors::NaApiError>,
+) -> (Option<UsageBilling>, Option<String>) {
+    match result {
+        Ok(row) => select_usage_billing(std::slice::from_ref(&row)),
+        Err(err) => (None, Some(err.to_string())),
+    }
+}
+
+fn select_usage_billing(
+    contracts: &[ContractUsage],
+) -> (Option<UsageBilling>, Option<String>) {
+    match contracts {
+        [] => omitted("no usage contract was returned"),
+        [only] => billing_from(only, None),
+        many => select_among(many),
+    }
+}
+
+fn select_among(
+    contracts: &[ContractUsage],
+) -> (Option<UsageBilling>, Option<String>) {
+    let free = contracts
+        .iter()
+        .filter(|contract| contract.is_free == Some(1))
+        .collect::<Vec<_>>();
+    match free.as_slice() {
+        [] => {
+            omitted("is_free is not 1 and more than one contract was returned")
+        }
+        [only] => billing_from(only, None),
+        [first, ..] => {
+            let mut usage = free
+                .iter()
+                .copied()
+                .filter(|contract| contract_type_is_usage(contract));
+            match (usage.next(), usage.next()) {
+                (Some(only), None) => billing_from(only, None),
+                _ => billing_from(
+                    first,
+                    Some(
+                        "several contracts have is_free 1; using the first"
+                            .to_string(),
+                    ),
+                ),
+            }
+        }
+    }
+}
+
+fn billing_from(
+    contract: &ContractUsage, note: Option<String>,
+) -> (Option<UsageBilling>, Option<String>) {
+    let contract_type = contract
+        .contract_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string);
+    let id = contract.id.map(|id| id.to_string());
+    match (contract_type, id) {
+        (Some(contract_type), Some(id)) => {
+            (Some(UsageBilling { contract_type, id }), note)
+        }
+        (missing_type, missing_id) => {
+            let message = match (missing_type.is_some(), missing_id.is_some()) {
+                (false, false) => "contract_type and id are missing",
+                (false, true) => "contract_type is missing",
+                (true, false) => "id is missing",
+                (true, true) => "contract billing is incomplete",
+            };
+            (None, Some(message.to_string()))
+        }
+    }
+}
+
+fn contract_type_is_usage(contract: &ContractUsage) -> bool {
+    contract
+        .contract_type
+        .as_deref()
+        .is_some_and(|kind| kind.trim() == "usage")
+}
+
+fn omitted(message: &str) -> (Option<UsageBilling>, Option<String>) {
+    (None, Some(message.to_string()))
+}
+
+async fn load_usage_contract(
+    client: &NaClient,
+) -> Result<UsageBilling, String> {
+    usage_for_delete(ContractUsage::get(client).await)
+}
+
+fn usage_for_delete(
+    result: Result<ContractUsage, rnaapi::errors::NaApiError>,
+) -> Result<UsageBilling, String> {
+    let (billing, note) = billing_from_contract_get(result);
+    match billing {
+        Some(billing) => Ok(billing),
+        None => Err(note.unwrap_or_else(|| "id is missing".to_string())),
+    }
+}
+
+fn listed<T>(
+    result: Result<Vec<T>, rnaapi::errors::NaApiError>,
+    choice: impl Fn(&T) -> Choice,
+) -> Listed {
+    match result {
+        Ok(rows) => {
+            let mut options = rows.iter().map(choice).collect::<Vec<_>>();
+            options.sort_by(|left, right| {
+                left.label
+                    .cmp(&right.label)
+                    .then(left.value.cmp(&right.value))
+            });
+            Listed {
+                options,
+                error: None,
+            }
+        }
+        Err(err) => Listed {
+            options: Vec::new(),
+            error: Some(err.to_string()),
+        },
+    }
+}
+
+/// `Server::buy` sends `plan` as the plan name from `Plan::list` (`cloud/sizes`).
+fn plan_choice(plan: &Plan) -> Choice {
+    let name = plan.plan.trim();
+    let value = if name.is_empty() {
+        plan.plan_id.to_string()
+    } else {
+        name.to_string()
+    };
+    let label = if plan.ram.trim().is_empty() {
+        value.clone()
+    } else {
+        format!("{value}  ram {}", plan.ram.trim())
+    };
+    Choice { label, value }
+}
+
+fn image_choice(image: &Image) -> Choice {
+    let name = image
+        .os
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .or_else(|| {
+            image
+                .description
+                .as_deref()
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+        })
+        .unwrap_or("image");
+    Choice {
+        label: name.to_string(),
+        value: image.id.to_string(),
+    }
+}
+
+fn location_choice(row: &Location) -> Choice {
+    let name = row.name.trim();
+    let code = row.iata_code.trim();
+    let label = match (name.is_empty(), code.is_empty()) {
+        (false, false) => format!("{name}  {code}"),
+        (false, true) => name.to_string(),
+        (true, false) => code.to_string(),
+        (true, true) => format!("location {}", row.id),
+    };
+    Choice {
+        label,
+        value: row.id.to_string(),
+    }
+}
+
+fn key_choice(key: &SSHKeys) -> Choice {
+    let name = key.name.trim();
+    let label = if name.is_empty() {
+        "ssh key".to_string()
+    } else {
+        name.to_string()
+    };
+    Choice {
+        label,
+        value: key.id.to_string(),
+    }
+}
+
+/// Confirm posts `Package::cancel` (`cloud/package/cancel`).
+/// `package` is the plan name. `domU_package` and `plan_id` are both
+/// `Server::plan_id`. `pkg_id` is `Server::pkg_id` written as a string.
+/// An empty name or hostname is omitted. `comments` is always JSON null.
+/// `password` stays unset. `host` is not on this body.
+#[allow(clippy::too_many_arguments)]
+fn cancel_package_body(
+    cancel_type: &str, contract_id: i64, mbpkgid: u32, package: Option<&str>,
+    fqdn: &str, plan_id: Option<u32>, pkg_id: Option<u32>,
+) -> CancelPackage {
+    CancelPackage {
+        mbpkgid: i64::from(mbpkgid),
+        domu_package: plan_id,
+        comments: None,
+        cancel_type: cancel_type.to_string(),
+        agree: true,
+        password: None,
+        contract_id: Some(contract_id),
+        fqdn: plan_name(Some(fqdn)),
+        package: plan_name(package),
+        pkg_id: pkg_id.map(|id| id.to_string()),
+        plan_id,
+    }
+}
+
+fn build_request(fields: &BuildFields) -> ServerBuildRequest {
+    ServerBuildRequest {
+        plan: fields.plan.clone(),
+        location: fields.location,
+        image: fields.image,
+        fqdn: fields.fqdn.clone(),
+        ssh_key_id: fields.ssh_key_id,
+        package_billing: fields.package_billing.clone(),
+        package_billing_contract_id: fields.package_billing_contract_id.clone(),
+        ..ServerBuildRequest::default()
+    }
+}
+
+fn server_build_line(
+    verb: &str, fqdn: Option<&str>, built: &ServerBuild,
+) -> String {
+    match fqdn {
+        Some(name) if !name.is_empty() => {
+            format!("{verb}: {name} mbpkgid {}", built.mbpkgid)
+        }
+        _ => format!("{verb}: mbpkgid {}", built.mbpkgid),
+    }
+}
+
+fn record_body(domain_id: i64, fields: &RecordFields) -> RecordBody {
+    RecordBody {
+        domain_id,
+        name: fields.name.clone(),
+        record_type: fields.record_type.clone(),
+        record_content: fields.content.clone(),
+        ttl: fields.ttl,
+        prio: fields.prio,
+    }
+}
+
+fn record_update(
+    id: i64, domain_id: i64, fields: &RecordFields,
+) -> RecordUpdate {
+    RecordUpdate {
+        id,
+        domain_id,
+        name: fields.name.clone(),
+        record_type: fields.record_type.clone(),
+        record_content: fields.content.clone(),
+        ttl: fields.ttl,
+        prio: fields.prio,
+    }
+}
+
 async fn load_locations(client: &NaClient) -> Result<Vec<LocationRow>, String> {
     let mut rows = Location::list(client)
         .await
@@ -533,7 +993,7 @@ async fn load_zones(client: &NaClient) -> Result<Vec<ZoneRow>, String> {
     Ok(rows)
 }
 
-async fn load_zone(client: &NaClient, id: u32) -> Result<Pane, String> {
+async fn load_zone(client: &NaClient, id: u32) -> Result<ZoneView, String> {
     let zone = Zone::get(client, id).await.map_err(|err| err.to_string())?;
     let mut fields = vec![
         Field::new("id", zone.id.to_string()),
@@ -548,29 +1008,52 @@ async fn load_zone(client: &NaClient, id: u32) -> Result<Pane, String> {
         fields.push(Field::new("hostmaster", soa.hostmaster.clone()));
         fields.push(Field::new("serial", soa.serial.clone()));
     }
+    let records = zone
+        .records
+        .unwrap_or_default()
+        .into_iter()
+        .map(dns_record)
+        .collect::<Vec<_>>();
     let mut sections = Vec::new();
-    if let Some(records) = zone.records {
-        sections.push(section("records", record_lines(records)));
+    if !records.is_empty() {
+        sections.push(section("records", record_lines(&records)));
     }
     if let Some(ns) = zone.ns {
-        sections.push(section("ns", record_lines(ns)));
+        sections.push(section(
+            "ns",
+            record_lines(&ns.into_iter().map(dns_record).collect::<Vec<_>>()),
+        ));
     }
-    Ok(Pane {
-        title: zone.name,
-        subtitle: format!("zone {}", zone.id),
-        fields,
-        sections,
+    Ok(ZoneView {
+        pane: Pane {
+            title: zone.name,
+            subtitle: format!("zone {}", zone.id),
+            fields,
+            sections,
+        },
+        records,
     })
 }
 
-fn record_lines(records: Vec<rnaapi::endpoints::Record>) -> Vec<String> {
+fn dns_record(record: Record) -> DnsRecord {
+    DnsRecord {
+        id: record.id,
+        name: record.name,
+        record_type: record.record_type,
+        content: record.content,
+        ttl: record.ttl,
+        prio: record.prio,
+    }
+}
+
+fn record_lines(records: &[DnsRecord]) -> Vec<String> {
     cap(
         records
-            .into_iter()
+            .iter()
             .map(|record| {
                 format!(
-                    "{}  {}  {}",
-                    record.name, record.record_type, record.content
+                    "{}  {}  {}  {}",
+                    record.id, record.name, record.record_type, record.content
                 )
             })
             .collect(),
@@ -675,6 +1158,16 @@ fn fallback(value: &str, default: &str) -> String {
     }
 }
 
+/// Plan name from the server list. Blank text is omitted from the delete body.
+fn plan_name(value: Option<&str>) -> Option<String> {
+    let text = value?.trim();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_string())
+    }
+}
+
 fn compact_value(value: &Value) -> String {
     let text = match value {
         Value::Null => "ok".to_string(),
@@ -700,15 +1193,16 @@ mod tests {
             os_id: 1,
             location_id: 3,
             ip: "192.0.2.10".into(),
-            ipv6: String::new(),
+            ipv6: Some(String::new()),
             plan_id: 1,
             pkg_id: 1,
-            state: "running".into(),
-            status: "running".into(),
-            uptime: "1".into(),
+            state: Some("running".into()),
+            status: Some("running".into()),
+            uptime: Some("1".into()),
             installed: 1,
-            nic1_mac: String::new(),
-            nic2_mac: String::new(),
+            nic1_mac: Some(String::new()),
+            nic2_mac: Some(String::new()),
+            package: None,
         }
     }
 
@@ -756,10 +1250,22 @@ mod tests {
         assert_eq!(virtual_row.kind, ServerKind::Virtual);
         assert_eq!(virtual_row.mbpkgid, 1001);
         assert_eq!(virtual_row.location, "Example City");
+        assert!(virtual_row.package.is_none());
+        assert_eq!(virtual_row.plan_id, Some(1));
+        assert_eq!(virtual_row.pkg_id, Some(1));
+        let mut named = server();
+        named.package = Some(" VR4x1x25 ".into());
+        assert_eq!(
+            server_row(&named).unwrap().package.as_deref(),
+            Some("VR4x1x25")
+        );
         let dedicated = metal_row(&metal("secret-pass")).unwrap();
         assert_eq!(dedicated.kind, ServerKind::Dedicated);
         assert_eq!(dedicated.mbpkgid, 1004);
         assert_eq!(dedicated.metal_id, Some(50));
+        assert!(dedicated.package.is_none());
+        assert!(dedicated.plan_id.is_none());
+        assert!(dedicated.pkg_id.is_none());
         let dumped = format!("{dedicated:?}");
         assert!(!dumped.contains("secret-pass"));
         assert!(
@@ -813,6 +1319,273 @@ mod tests {
     }
 
     #[test]
+    fn a_server_delete_sends_cancel_type_agree_and_contract_id() {
+        let body = super::cancel_package_body(
+            "Immediate",
+            7,
+            1001,
+            Some("VR4x1x25"),
+            "web-01.example",
+            Some(42),
+            Some(9),
+        );
+        assert_eq!(body.cancel_type, "Immediate");
+        assert!(body.agree);
+        assert_eq!(body.contract_id, Some(7));
+        assert_eq!(body.mbpkgid, 1001);
+        assert_eq!(body.package.as_deref(), Some("VR4x1x25"));
+        assert_eq!(body.fqdn.as_deref(), Some("web-01.example"));
+        assert_eq!(body.domu_package, Some(42));
+        assert_eq!(body.plan_id, Some(42));
+        assert_eq!(body.pkg_id.as_deref(), Some("9"));
+        assert!(body.comments.is_none());
+        assert!(body.password.is_none());
+        let value = serde_json::to_value(&body).unwrap();
+        assert_eq!(value["cancel_type"], "Immediate");
+        assert_eq!(value["agree"], true);
+        assert_eq!(value["contract_id"], 7);
+        assert_eq!(value["mbpkgid"], 1001);
+        assert_eq!(value["package"], "VR4x1x25");
+        assert_eq!(value["fqdn"], "web-01.example");
+        assert_eq!(value["domU_package"], 42);
+        assert_eq!(value["plan_id"], 42);
+        assert_eq!(value["pkg_id"], "9");
+        assert!(value["comments"].is_null());
+        for absent in [
+            "password",
+            "domu_package",
+            "host",
+            "state",
+            "location",
+            "nics",
+        ] {
+            assert!(value.get(absent).is_none(), "{absent} {value}");
+        }
+        let omitted = super::cancel_package_body(
+            "Immediate",
+            7,
+            1001,
+            Some("  "),
+            "  ",
+            None,
+            None,
+        );
+        assert!(omitted.package.is_none());
+        assert!(omitted.fqdn.is_none());
+        assert!(omitted.domu_package.is_none());
+        assert!(omitted.plan_id.is_none());
+        assert!(omitted.pkg_id.is_none());
+        let omitted = serde_json::to_value(&omitted).unwrap();
+        assert!(omitted.get("package").is_none(), "{omitted}");
+        assert!(omitted.get("fqdn").is_none(), "{omitted}");
+        assert!(omitted.get("domU_package").is_none(), "{omitted}");
+        assert!(omitted.get("plan_id").is_none(), "{omitted}");
+        assert!(omitted.get("pkg_id").is_none(), "{omitted}");
+        assert!(omitted.get("host").is_none(), "{omitted}");
+        assert!(omitted["comments"].is_null());
+        assert_eq!(omitted["mbpkgid"], 1001);
+    }
+
+    #[test]
+    fn a_missing_usage_id_does_not_become_a_delete_contract() {
+        let missing = super::usage_for_delete(Ok(contract(
+            None,
+            Some("usage"),
+            Some(1),
+            Some(40),
+        )));
+        let message = missing.expect_err("id is required");
+        assert_eq!(message, "id is missing");
+        assert!(!message.contains("40"));
+        let failed = super::usage_for_delete(Err(
+            rnaapi::errors::NaApiError::Api("connection failed".into()),
+        ));
+        assert_eq!(failed.expect_err("get failed"), "connection failed");
+    }
+
+    #[test]
+    fn a_server_build_request_keeps_only_the_filled_fields() {
+        let body = super::build_request(&BuildFields {
+            fqdn: Some("web.example".into()),
+            plan: Some("plan-1".into()),
+            location: Some(3),
+            image: None,
+            ssh_key_id: Some(9),
+            package_billing: None,
+            package_billing_contract_id: None,
+        });
+        assert_eq!(body.fqdn.as_deref(), Some("web.example"));
+        assert_eq!(body.plan.as_deref(), Some("plan-1"));
+        assert_eq!(body.location, Some(3));
+        assert!(body.image.is_none());
+        assert_eq!(body.ssh_key_id, Some(9));
+        assert!(body.password.is_none());
+        assert!(body.ssh_key.is_none());
+        assert!(body.package_billing.is_none());
+        assert!(body.package_billing_contract_id.is_none());
+
+        let billed = super::build_request(&BuildFields {
+            fqdn: Some("web.example".into()),
+            plan: Some("plan-1".into()),
+            location: Some(3),
+            image: Some(4),
+            ssh_key_id: Some(9),
+            package_billing: Some("metered".into()),
+            package_billing_contract_id: Some("7".into()),
+        });
+        assert_eq!(billed.package_billing.as_deref(), Some("metered"));
+        assert_eq!(billed.package_billing_contract_id.as_deref(), Some("7"));
+        assert!(billed.ssh_key.is_none());
+        assert!(billed.cloud_pool_id.is_none());
+        assert!(billed.vpc_id.is_none());
+        let value = serde_json::to_value(&billed).unwrap();
+        assert!(value["package_billing_contract_id"].is_string());
+        assert!(value.get("ssh_key").is_none());
+        assert!(value.get("cloud_pool_id").is_none());
+    }
+
+    #[test]
+    fn the_only_usage_contract_copies_contract_type_and_id() {
+        let (billing, message) = super::select_usage_billing(&[contract(
+            Some(7),
+            Some(" metered "),
+            Some(1),
+            Some(40),
+        )]);
+        let billing = billing.expect("free contract");
+        assert_eq!(billing.contract_type, "metered");
+        assert_eq!(billing.id, "7");
+        assert_ne!(billing.id, "40");
+        assert!(message.is_none());
+
+        let (billing, message) = super::select_usage_billing(&[contract(
+            Some(8),
+            Some("hourly"),
+            Some(0),
+            Some(41),
+        )]);
+        let billing = billing.expect("only contract");
+        assert_eq!(billing.contract_type, "hourly");
+        assert_eq!(billing.id, "8");
+        assert_ne!(billing.id, "41");
+        assert!(message.is_none());
+
+        let (billing, message) = super::select_usage_billing(&[contract(
+            Some(9),
+            Some("hourly"),
+            None,
+            Some(42),
+        )]);
+        assert_eq!(billing.expect("unmarked contract").id, "9");
+        assert!(message.is_none());
+
+        let (billing, message) = super::select_usage_billing(&[contract(
+            None,
+            Some("hourly"),
+            Some(1),
+            Some(40),
+        )]);
+        assert!(billing.is_none());
+        assert_eq!(message.as_deref(), Some("id is missing"));
+        assert!(!message.unwrap().contains("40"));
+
+        let (billing, message) = super::select_usage_billing(&[contract(
+            Some(7),
+            Some("  "),
+            Some(1),
+            Some(40),
+        )]);
+        assert!(billing.is_none());
+        assert_eq!(message.as_deref(), Some("contract_type is missing"));
+    }
+
+    #[test]
+    fn several_usage_contracts_follow_the_free_contract_rules() {
+        let (billing, message) = super::select_usage_billing(&[
+            contract(Some(15), Some("monthly"), Some(0), Some(40)),
+            contract(Some(16), Some("hourly"), Some(1), Some(41)),
+        ]);
+        let billing = billing.expect("one free contract");
+        assert_eq!(billing.contract_type, "hourly");
+        assert_eq!(billing.id, "16");
+        assert_ne!(billing.id, "41");
+        assert!(message.is_none());
+
+        let (billing, message) = super::select_usage_billing(&[
+            contract(Some(15), Some("monthly"), Some(1), None),
+            contract(Some(16), Some(" usage "), Some(1), Some(41)),
+            contract(Some(21), Some("usage"), Some(0), None),
+        ]);
+        let billing = billing.expect("single usage type");
+        assert_eq!(billing.contract_type, "usage");
+        assert_eq!(billing.id, "16");
+        assert!(message.is_none());
+
+        let (billing, message) = super::select_usage_billing(&[
+            contract(Some(15), Some("monthly"), Some(1), None),
+            contract(Some(16), Some("hourly"), Some(1), None),
+        ]);
+        assert_eq!(billing.expect("first free").id, "15");
+        let message = message.expect("ambiguous");
+        assert!(message.contains("first"), "{message}");
+
+        let (billing, message) = super::select_usage_billing(&[
+            contract(Some(15), Some("usage"), Some(1), None),
+            contract(Some(16), Some("usage"), Some(1), None),
+        ]);
+        assert_eq!(billing.expect("first usage").id, "15");
+        assert!(message.expect("ambiguous").contains("first"));
+
+        let (billing, message) = super::select_usage_billing(&[
+            contract(Some(15), Some("usage"), Some(0), Some(40)),
+            contract(Some(16), Some("hourly"), None, Some(41)),
+        ]);
+        assert!(billing.is_none());
+        let message = message.expect("omitted");
+        assert!(message.contains("is_free"), "{message}");
+        assert!(!message.contains("40"));
+        assert!(!message.contains("41"));
+
+        let (billing, message) = super::select_usage_billing(&[]);
+        assert!(billing.is_none());
+        assert!(message.expect("empty").contains("no usage contract"));
+    }
+
+    #[test]
+    fn a_failed_contract_call_does_not_invent_billing() {
+        let (billing, message) = super::billing_from_contract_get(Err(
+            rnaapi::errors::NaApiError::Api("connection failed".into()),
+        ));
+        assert!(billing.is_none());
+        assert_eq!(message.as_deref(), Some("connection failed"));
+    }
+
+    fn contract(
+        id: Option<i64>, contract_type: Option<&str>, is_free: Option<i64>,
+        contract_mbpkgid: Option<i64>,
+    ) -> ContractUsage {
+        ContractUsage {
+            id,
+            contract_mbpkgid,
+            parent_contract_id: None,
+            brand: None,
+            mb_id: None,
+            contract_type: contract_type.map(str::to_string),
+            is_free,
+            include_bandwidth: None,
+            customer_po: None,
+            customer_description: None,
+            po_monthly_limit: None,
+            monthly_discount: None,
+            hourly_discount: None,
+            max_cpus: None,
+            max_ram: None,
+            max_disk: None,
+            allow_overage: None,
+        }
+    }
+
+    #[test]
     fn a_token_round_trip_is_the_request_token() {
         let token = Token {
             tab: crate::focus::Tab::Servers,
@@ -829,5 +1602,63 @@ mod tests {
         });
         assert_eq!(request.token(), token);
         assert_eq!(force_flag(false), None);
+    }
+
+    #[test]
+    fn build_choices_show_a_name_and_keep_the_id_buy_sends() {
+        let plan = super::plan_choice(&Plan {
+            plan_id: 7,
+            plan: "VR1x2".into(),
+            ram: "2048".into(),
+            disk: "40".into(),
+            transfer: "1".into(),
+            price: "2".into(),
+            available: 1.0,
+        });
+        assert_eq!(plan.value, "VR1x2");
+        assert!(plan.label.contains("VR1x2"), "{}", plan.label);
+        assert!(plan.label.contains("2048"), "{}", plan.label);
+        assert!(!plan.value.contains("2048"));
+
+        let image = super::image_choice(&Image {
+            id: 55,
+            os: Some("Ubuntu 24.04".into()),
+            description: Some("linux".into()),
+            size: None,
+            subtype: None,
+            created: None,
+            category: None,
+            updated: None,
+            iso: None,
+            bits: None,
+            tech: None,
+            icon: None,
+            private: None,
+        });
+        assert_eq!(image.label, "Ubuntu 24.04");
+        assert_eq!(image.value, "55");
+
+        let location = super::location_choice(&Location {
+            id: 42,
+            name: "Ashburn".into(),
+            iata_code: "IAD".into(),
+            continent: "NA".into(),
+            flag: "us".into(),
+            latitude: "0".into(),
+            longitude: "0".into(),
+            disabled: 0,
+            status: Vec::new(),
+        });
+        assert_eq!(location.label, "Ashburn  IAD");
+        assert_eq!(location.value, "42");
+
+        let key = super::key_choice(&SSHKeys {
+            id: 12,
+            ssh_key: "ssh-ed25519 AAAA".into(),
+            fingerprint: "SHA256:ab".into(),
+            name: "laptop".into(),
+        });
+        assert_eq!(key.label, "laptop");
+        assert_eq!(key.value, "12");
     }
 }

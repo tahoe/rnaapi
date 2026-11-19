@@ -48,15 +48,18 @@ pub struct Server {
     pub os_id: u32,
     pub location_id: u32,
     pub ip: String,
-    pub ipv6: String,
+    pub ipv6: Option<String>,
     pub plan_id: u32,
     pub pkg_id: u32,
-    pub state: String,
-    pub status: String,
-    pub uptime: String,
+    /// Plan name from `cloud/servers`, for example `VR4x1x25`.
+    #[serde(default)]
+    pub package: Option<String>,
+    pub state: Option<String>,
+    pub status: Option<String>,
+    pub uptime: Option<String>,
     pub installed: u32,
-    pub nic1_mac: String,
-    pub nic2_mac: String,
+    pub nic1_mac: Option<String>,
+    pub nic2_mac: Option<String>,
 }
 
 // Job struct
@@ -214,12 +217,47 @@ pub struct ServerBuildRequest {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeleteServer {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancel_billing: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub force_password: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cancel_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agree: Option<bool>,
+    /// Usage contract id (`ContractUsage.id`), not `contract_mbpkgid`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract_id: Option<i64>,
+    /// Always sent. `None` is JSON null, matching the portal delete body.
+    #[serde(default)]
+    pub comments: Option<String>,
+    /// Same id `Server::delete` puts in `cloud/server/{mbpkgid}/delete`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mbpkgid: Option<u32>,
+    /// Plan name from the server list, for example `VR4x1x25`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    /// Hostname confirmed against the selected server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fqdn: Option<String>,
+    /// `Server::plan_id`. The portal key is `domU_package`.
+    #[serde(
+        default,
+        rename = "domU_package",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub domu_package: Option<u32>,
+    /// `Server::pkg_id` written as a string. The portal sends this key as a string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pkg_id: Option<String>,
+    /// `Server::plan_id`, sent again under its own key beside `domU_package`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_id: Option<u32>,
+    /// Host id. Omitted when the selected server has no host id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -289,4 +327,122 @@ pub struct AttemptSsh {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReverseDns {
     pub reverse: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_new_server_accepts_null_strings() {
+        let mut value = json!({
+            "city": "Example City",
+            "fqdn": "web-01.example",
+            "domU_package": 1,
+            "mbpkgid": 1001,
+            "os_id": 1,
+            "location_id": 3,
+            "ip": "192.0.2.10",
+            "ipv6": null,
+            "plan_id": 1,
+            "pkg_id": 1,
+            "state": null,
+            "status": null,
+            "uptime": null,
+            "installed": 0,
+            "nic1_mac": null,
+            "nic2_mac": null,
+            "virtual": null
+        });
+        let server: Server = serde_json::from_value(value.clone()).unwrap();
+        assert!(server.ipv6.is_none());
+        assert!(server.state.is_none());
+        assert!(server.status.is_none());
+        assert!(server.uptime.is_none());
+        assert!(server.nic1_mac.is_none());
+        assert!(server.nic2_mac.is_none());
+        assert!(server.package.is_none());
+        assert_eq!(server.fqdn, "web-01.example");
+        assert_eq!(server.mbpkgid, 1001);
+        value["package"] = json!("VR4x1x25");
+        let named: Server = serde_json::from_value(value).unwrap();
+        assert_eq!(named.package.as_deref(), Some("VR4x1x25"));
+    }
+
+    #[test]
+    fn delete_server_skips_none_and_keeps_the_cancel_fields() {
+        let body = DeleteServer {
+            cancel_type: Some("Immediate".into()),
+            agree: Some(true),
+            contract_id: Some(12),
+            comments: None,
+            cancel_billing: None,
+            force_password: None,
+            password: None,
+            mbpkgid: Some(1001),
+            package: Some("VR4x1x25".into()),
+            fqdn: Some("web-01.example".into()),
+            domu_package: Some(42),
+            pkg_id: Some("9".into()),
+            plan_id: Some(42),
+            host: Some(3),
+        };
+        let value = serde_json::to_value(&body).unwrap();
+        assert_eq!(value["cancel_type"], "Immediate");
+        assert_eq!(value["agree"], true);
+        assert_eq!(value["contract_id"], 12);
+        assert_eq!(value["mbpkgid"], 1001);
+        assert_eq!(value["package"], "VR4x1x25");
+        assert_eq!(value["fqdn"], "web-01.example");
+        assert_eq!(value["domU_package"], 42);
+        assert_eq!(value["pkg_id"], "9");
+        assert_eq!(value["plan_id"], 42);
+        assert_eq!(value["host"], 3);
+        assert!(value["comments"].is_null());
+        for absent in [
+            "cancel_billing",
+            "force_password",
+            "password",
+            "domu_package",
+            "state",
+            "location",
+            "nics",
+        ] {
+            assert!(value.get(absent).is_none(), "{absent}");
+        }
+        let omitted = DeleteServer {
+            package: None,
+            fqdn: None,
+            domu_package: None,
+            pkg_id: None,
+            plan_id: None,
+            host: None,
+            ..body.clone()
+        };
+        let skipped_package = serde_json::to_value(&omitted).unwrap();
+        assert!(
+            skipped_package.get("package").is_none(),
+            "{skipped_package}"
+        );
+        assert!(skipped_package.get("fqdn").is_none(), "{skipped_package}");
+        assert!(
+            skipped_package.get("domU_package").is_none(),
+            "{skipped_package}"
+        );
+        assert!(skipped_package.get("pkg_id").is_none(), "{skipped_package}");
+        assert!(
+            skipped_package.get("plan_id").is_none(),
+            "{skipped_package}"
+        );
+        assert!(skipped_package.get("host").is_none(), "{skipped_package}");
+        assert!(skipped_package["comments"].is_null());
+        assert_eq!(skipped_package["mbpkgid"], 1001);
+        let parsed: DeleteServer = serde_json::from_value(value).unwrap();
+        assert_eq!(parsed, body);
+        let empty: DeleteServer = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(empty, DeleteServer::default());
+        let skipped = serde_json::to_value(DeleteServer::default()).unwrap();
+        assert_eq!(skipped, json!({ "comments": null }));
+    }
 }

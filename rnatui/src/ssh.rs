@@ -43,6 +43,19 @@ pub fn new_ssh_key(file: Option<&str>) -> Result<NewSshKey> {
     })
 }
 
+/// A pasted public key is used as itself. Anything else is a file path,
+/// with the same tilde and bare-name rules as [`new_ssh_key`].
+pub fn public_key_material(material: &str) -> Result<String> {
+    let trimmed = material.trim();
+    if trimmed.is_empty() {
+        bail!("public key is required");
+    }
+    if let Ok(key) = openssh_keys::PublicKey::parse(trimmed) {
+        return Ok(key.to_string());
+    }
+    Ok(new_ssh_key(Some(trimmed))?.ssh_key)
+}
+
 fn expand_tilde(raw: &str) -> Result<PathBuf> {
     let home = || {
         env::var_os("HOME")
@@ -218,5 +231,9 @@ mod tests {
         assert_eq!(from_file.name, "test");
         assert!(from_file.private_path.is_none());
         assert!(from_file.ssh_key.starts_with("ssh-ed25519 "));
+        let pasted = public_key_material(SAMPLE_KEY).unwrap();
+        assert!(pasted.starts_with("ssh-ed25519 "));
+        let from_path = public_key_material("~/.ssh/test.pub").unwrap();
+        assert_eq!(from_path, pasted);
     }
 }

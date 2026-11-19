@@ -44,6 +44,73 @@ impl Tab {
     }
 }
 
+/// A button in a pane. Left buttons start something new. Right buttons act
+/// on the selected row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    CreateServer,
+    RebuildServer,
+    DeleteServer,
+    NewKey,
+    UpdateKey,
+    DeleteKey,
+    CreateZone,
+    DeleteZone,
+    CreateRecord,
+    UpdateRecord,
+    DeleteRecord,
+}
+
+impl Action {
+    pub fn label(self) -> &'static str {
+        match self {
+            Action::CreateServer => "Create server",
+            Action::RebuildServer => "Rebuild",
+            Action::DeleteServer => "Delete",
+            Action::NewKey => "New key",
+            Action::UpdateKey => "Update",
+            Action::DeleteKey => "Delete",
+            Action::CreateZone => "New zone",
+            Action::DeleteZone => "Delete zone",
+            Action::CreateRecord => "New record",
+            Action::UpdateRecord => "Update record",
+            Action::DeleteRecord => "Delete record",
+        }
+    }
+
+    /// New-item buttons for this tab. They stay available with no selection.
+    pub fn left(tab: Tab) -> &'static [Action] {
+        match tab {
+            Tab::Servers => &[Action::CreateServer],
+            Tab::SshKeys => &[Action::NewKey],
+            Tab::Dns => &[Action::CreateZone, Action::CreateRecord],
+            Tab::Locations | Tab::Account => &[],
+        }
+    }
+
+    /// Buttons that change the selected row. Hidden when nothing is selected.
+    pub fn right(tab: Tab) -> &'static [Action] {
+        match tab {
+            Tab::Servers => &[Action::RebuildServer, Action::DeleteServer],
+            Tab::SshKeys => &[Action::UpdateKey, Action::DeleteKey],
+            Tab::Dns => &[
+                Action::DeleteZone,
+                Action::UpdateRecord,
+                Action::DeleteRecord,
+            ],
+            Tab::Locations | Tab::Account => &[],
+        }
+    }
+
+    pub fn is_left(self, tab: Tab) -> bool {
+        Self::left(tab).contains(&self)
+    }
+
+    pub fn is_right(self, tab: Tab) -> bool {
+        Self::right(tab).contains(&self)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Slot {
     Servers,
@@ -58,9 +125,15 @@ pub enum Slot {
     Power,
     /// Jobs, addresses, or bandwidth for the selected server.
     ServerList,
+    /// A create, update, or delete. A newer write drops the older response.
+    Write,
+    /// Plans, images, locations, and SSH keys for the create-server form.
+    Catalog,
+    /// `ContractUsage::get` when a delete confirm does not have a contract yet.
+    Usage,
 }
 
-/// Subtabs under the server power buttons. Tab moves the outline.
+/// Subtabs under the server detail. Tab moves the outline.
 /// Enter, Space, and a click select one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ServerPane {
@@ -104,8 +177,6 @@ pub enum DetailControl {
     On,
     Off,
     Reboot,
-    Force,
-    NewKey,
 }
 
 impl DetailControl {
@@ -114,8 +185,6 @@ impl DetailControl {
             DetailControl::On => "On",
             DetailControl::Off => "Off",
             DetailControl::Reboot => "Reboot",
-            DetailControl::Force => "Force",
-            DetailControl::NewKey => "New key",
         }
     }
 }
@@ -132,6 +201,8 @@ pub enum Split {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Focus {
     Tab(Tab),
+    /// A pane button. Left buttons follow the tabs. Right buttons follow the list.
+    Action(Action),
     Row(usize),
     Detail(DetailControl),
     ServerPane(ServerPane),
@@ -150,33 +221,30 @@ impl PopupFocus {
         [PopupFocus::Force, PopupFocus::Confirm, PopupFocus::Cancel];
 }
 
+/// Focus inside a small prompt. Fields come first, then the two buttons.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum KeyFocus {
-    Input,
-    Create,
+pub enum PromptFocus {
+    Field(usize),
+    Submit,
     Cancel,
-}
-
-impl KeyFocus {
-    pub const ORDER: [KeyFocus; 3] =
-        [KeyFocus::Input, KeyFocus::Create, KeyFocus::Cancel];
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Modal {
     None,
     Power,
-    Key,
+    Prompt,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     Tab(Tab),
+    Action(Action),
     Row(usize),
     Detail(DetailControl),
     ServerPane(ServerPane),
     Power(PopupFocus),
-    Key(KeyFocus),
+    Prompt(PromptFocus),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,8 +257,12 @@ pub struct Hit {
 pub const PANE_MIN: u16 = 20;
 pub const LOG_MIN: u16 = 3;
 pub const LOG_DEFAULT: u16 = 4;
-/// Top bar, tab row, and key bar. The body and the log share what remains.
+/// Top bar, tab row, and key bar. Pane buttons sit inside the body.
+/// The body and the log share what remains.
 const CHROME: u16 = 1 + 3 + 1;
+/// Kept so a caller can still reserve a band under the tabs. The screen
+/// does not. Its buttons live at the top of each pane.
+pub const ACTION_ROWS: u16 = 1;
 /// Body rows kept so the frame still has an interior.
 const MAIN_MIN: u16 = 6;
 
@@ -207,6 +279,9 @@ pub struct Screen {
     pub area: Rect,
     pub top: Rect,
     pub tabs: Rect,
+    pub actions: Rect,
+    /// Fitted height of the actions row. `0` when this tab has no writes.
+    pub action_rows: u16,
     pub body: Rect,
     pub log: Rect,
     pub hints: Rect,
@@ -227,6 +302,8 @@ impl Default for Screen {
             area: Rect::default(),
             top: Rect::default(),
             tabs: Rect::default(),
+            actions: Rect::default(),
+            action_rows: 0,
             body: Rect::default(),
             log: Rect::default(),
             hints: Rect::default(),
@@ -250,15 +327,20 @@ impl Screen {
     }
 
     /// Place the panes for this frame and keep a resize that is already underway.
-    pub fn prepare(&mut self, area: Rect) {
+    /// `action_rows` is `ACTION_ROWS` when the open tab has writes, else `0`.
+    pub fn layout(&mut self, area: Rect, action_rows: u16) {
         self.area = area;
+        let action_rows = fitted_action_rows(area.height, action_rows);
+        self.action_rows = action_rows;
         if self.log_rows == 0 {
             self.log_rows = LOG_DEFAULT;
         }
-        self.log_rows = clamp_log_rows(self.log_rows, area.height);
-        let bands = bands(area, self.log_rows);
+        self.log_rows =
+            clamp_log_rows_for(self.log_rows, area.height, action_rows);
+        let bands = bands(area, self.log_rows, action_rows);
         self.top = bands.top;
         self.tabs = bands.tabs;
+        self.actions = bands.actions;
         self.body = bands.body;
         self.log = bands.log;
         self.hints = bands.hints;
@@ -297,9 +379,10 @@ impl Screen {
             Split::Rows => {
                 let next =
                     i16::try_from(self.log_rows).unwrap_or(i16::MAX) + delta;
-                self.log_rows = clamp_log_rows(
+                self.log_rows = clamp_log_rows_for(
                     u16::try_from(next.max(0)).unwrap_or(0),
                     self.area.height,
+                    self.action_rows,
                 );
             }
         }
@@ -314,26 +397,44 @@ impl Screen {
     /// Move the horizontal rule so it sits on `row`.
     pub fn drag_rows_to(&mut self, row: u16) {
         let log_rows = self.hints.y.saturating_sub(row.saturating_add(1));
-        self.log_rows = clamp_log_rows(log_rows, self.area.height);
+        self.log_rows =
+            clamp_log_rows_for(log_rows, self.area.height, self.action_rows);
     }
 }
 
 struct Bands {
     top: Rect,
     tabs: Rect,
+    actions: Rect,
     body: Rect,
     log: Rect,
     hints: Rect,
 }
 
-fn bands(area: Rect, log_rows: u16) -> Bands {
+fn fitted_action_rows(area_height: u16, want: u16) -> u16 {
+    if want == 0 {
+        return 0;
+    }
+    let top_h = 1.min(area_height);
+    let tabs_h = 3.min(area_height.saturating_sub(top_h));
+    let room = area_height.saturating_sub(top_h.saturating_add(tabs_h));
+    if room < ACTION_ROWS {
+        0
+    } else {
+        ACTION_ROWS.min(want)
+    }
+}
+
+fn bands(area: Rect, log_rows: u16, action_rows: u16) -> Bands {
     let top_h = 1.min(area.height);
     let tabs_h = 3.min(area.height.saturating_sub(top_h));
-    let hints_h =
-        1.min(area.height.saturating_sub(top_h.saturating_add(tabs_h)));
+    let actions_h = action_rows
+        .min(area.height.saturating_sub(top_h.saturating_add(tabs_h)));
+    let used = top_h.saturating_add(tabs_h).saturating_add(actions_h);
+    let hints_h = 1.min(area.height.saturating_sub(used));
     let hints_y = area.y.saturating_add(area.height.saturating_sub(hints_h));
     let log_y = hints_y.saturating_sub(log_rows);
-    let body_y = area.y.saturating_add(top_h.saturating_add(tabs_h));
+    let body_y = area.y.saturating_add(used);
     let body_h = log_y.saturating_sub(body_y);
     Bands {
         top: Rect {
@@ -347,6 +448,12 @@ fn bands(area: Rect, log_rows: u16) -> Bands {
             y: area.y.saturating_add(top_h),
             width: area.width,
             height: tabs_h,
+        },
+        actions: Rect {
+            x: area.x,
+            y: area.y.saturating_add(top_h.saturating_add(tabs_h)),
+            width: area.width,
+            height: actions_h,
         },
         body: Rect {
             x: area.x,
@@ -391,8 +498,11 @@ pub fn clamp_list_width(want: u16, body_width: u16) -> u16 {
     want.clamp(floor, max)
 }
 
-pub fn clamp_log_rows(want: u16, area_height: u16) -> u16 {
-    let available = area_height.saturating_sub(CHROME);
+pub fn clamp_log_rows_for(
+    want: u16, area_height: u16, action_rows: u16,
+) -> u16 {
+    let available =
+        area_height.saturating_sub(CHROME.saturating_add(action_rows));
     if available == 0 {
         return 0;
     }
@@ -414,23 +524,31 @@ pub fn starting_focus(tab: Tab, rows: usize, selected: Option<usize>) -> Focus {
     Focus::Row(index)
 }
 
-pub fn order(tab: Tab, rows: usize) -> Vec<Focus> {
+/// Tabs, then the left-pane buttons, then the list, then the right-pane
+/// buttons, then the server subtabs. Right buttons are omitted when
+/// `selected` is false, because those controls are not drawn.
+pub fn order(tab: Tab, rows: usize, selected: bool) -> Vec<Focus> {
     let mut items = TABS.into_iter().map(Focus::Tab).collect::<Vec<_>>();
+    for action in Action::left(tab) {
+        items.push(Focus::Action(*action));
+    }
     for index in 0..rows {
         items.push(Focus::Row(index));
     }
-    match tab {
-        Tab::Servers => {
+    if selected {
+        if tab == Tab::Servers {
             items.push(Focus::Detail(DetailControl::On));
             items.push(Focus::Detail(DetailControl::Off));
             items.push(Focus::Detail(DetailControl::Reboot));
-            items.push(Focus::Detail(DetailControl::Force));
-            for pane in ServerPane::ALL {
-                items.push(Focus::ServerPane(pane));
-            }
         }
-        Tab::SshKeys => items.push(Focus::Detail(DetailControl::NewKey)),
-        Tab::Locations | Tab::Dns | Tab::Account => {}
+        for action in Action::right(tab) {
+            items.push(Focus::Action(*action));
+        }
+    }
+    if tab == Tab::Servers {
+        for pane in ServerPane::ALL {
+            items.push(Focus::ServerPane(pane));
+        }
     }
     items
 }
@@ -443,8 +561,16 @@ pub fn step_popup(current: PopupFocus, backward: bool) -> PopupFocus {
     cycle(&PopupFocus::ORDER, current, backward)
 }
 
-pub fn step_key(current: KeyFocus, backward: bool) -> KeyFocus {
-    cycle(&KeyFocus::ORDER, current, backward)
+pub fn step_prompt(
+    fields: usize, current: PromptFocus, backward: bool,
+) -> PromptFocus {
+    let mut items = Vec::with_capacity(fields.saturating_add(2));
+    for index in 0..fields {
+        items.push(PromptFocus::Field(index));
+    }
+    items.push(PromptFocus::Submit);
+    items.push(PromptFocus::Cancel);
+    cycle(&items, current, backward)
 }
 
 fn cycle<T>(items: &[T], current: T, backward: bool) -> T
@@ -480,9 +606,9 @@ pub fn target_at(
 
 fn target_allowed(modal: Modal, target: Target) -> bool {
     match modal {
-        Modal::None => !matches!(target, Target::Power(_) | Target::Key(_)),
+        Modal::None => !matches!(target, Target::Power(_) | Target::Prompt(_)),
         Modal::Power => matches!(target, Target::Power(_)),
-        Modal::Key => matches!(target, Target::Key(_)),
+        Modal::Prompt => matches!(target, Target::Prompt(_)),
     }
 }
 
@@ -505,43 +631,53 @@ mod tests {
     }
 
     #[test]
-    fn focus_order_is_tabs_then_rows_then_detail_and_tab_wraps() {
-        let order = order(Tab::Servers, 2);
+    fn focus_order_is_tabs_then_left_actions_then_rows_then_right() {
+        let order = order(Tab::Servers, 2, true);
         assert_eq!(
-            &order[..7],
+            &order[..6],
             &[
                 Focus::Tab(Tab::Servers),
                 Focus::Tab(Tab::SshKeys),
                 Focus::Tab(Tab::Locations),
                 Focus::Tab(Tab::Dns),
                 Focus::Tab(Tab::Account),
-                Focus::Row(0),
-                Focus::Row(1),
+                Focus::Action(Action::CreateServer),
             ]
         );
         assert_eq!(
-            &order[7..],
+            &order[6..],
             &[
+                Focus::Row(0),
+                Focus::Row(1),
                 Focus::Detail(DetailControl::On),
                 Focus::Detail(DetailControl::Off),
                 Focus::Detail(DetailControl::Reboot),
-                Focus::Detail(DetailControl::Force),
+                Focus::Action(Action::RebuildServer),
+                Focus::Action(Action::DeleteServer),
                 Focus::ServerPane(ServerPane::Jobs),
                 Focus::ServerPane(ServerPane::Address),
                 Focus::ServerPane(ServerPane::Bandwidth),
             ]
         );
         assert_eq!(
-            step(&order, Focus::Detail(DetailControl::Force), false,),
+            step(&order, Focus::Action(Action::DeleteServer), false),
             Focus::ServerPane(ServerPane::Jobs)
         );
         assert_eq!(
             step(&order, Focus::ServerPane(ServerPane::Jobs), true),
-            Focus::Detail(DetailControl::Force)
+            Focus::Action(Action::DeleteServer)
         );
         assert_eq!(
             step(&order, Focus::ServerPane(ServerPane::Bandwidth), false),
             order[0]
+        );
+        assert_eq!(
+            step(&order, Focus::Tab(Tab::Account), false),
+            Focus::Action(Action::CreateServer)
+        );
+        assert_eq!(
+            step(&order, Focus::Action(Action::CreateServer), false),
+            Focus::Row(0)
         );
 
         let mut focus = order[0];
@@ -551,14 +687,57 @@ mod tests {
         assert_eq!(focus, order[0]);
         assert_eq!(step(&order, order[0], true), *order.last().unwrap());
 
-        let ssh = super::order(Tab::SshKeys, 1);
-        assert_eq!(*ssh.last().unwrap(), Focus::Detail(DetailControl::NewKey));
-        let locations = super::order(Tab::Locations, 3);
+        let hidden = super::order(Tab::Servers, 0, false);
+        assert!(hidden.contains(&Focus::Action(Action::CreateServer)));
+        assert!(hidden.iter().all(|item| {
+            !matches!(
+                item,
+                Focus::Detail(_)
+                    | Focus::Action(Action::RebuildServer)
+                    | Focus::Action(Action::DeleteServer)
+            )
+        }));
+        assert_eq!(
+            *hidden.last().unwrap(),
+            Focus::ServerPane(ServerPane::Bandwidth)
+        );
+
+        let ssh = super::order(Tab::SshKeys, 1, true);
+        assert_eq!(ssh[5], Focus::Action(Action::NewKey));
+        assert_eq!(ssh[6], Focus::Row(0));
+        assert_eq!(ssh[7], Focus::Action(Action::UpdateKey));
+        assert_eq!(*ssh.last().unwrap(), Focus::Action(Action::DeleteKey));
+        let ssh_empty = super::order(Tab::SshKeys, 0, false);
+        assert_eq!(
+            ssh_empty.as_slice(),
+            &[
+                Focus::Tab(Tab::Servers),
+                Focus::Tab(Tab::SshKeys),
+                Focus::Tab(Tab::Locations),
+                Focus::Tab(Tab::Dns),
+                Focus::Tab(Tab::Account),
+                Focus::Action(Action::NewKey),
+            ]
+        );
+        let locations = super::order(Tab::Locations, 3, true);
         assert_eq!(locations.len(), 8);
-        assert!(
-            locations
-                .iter()
-                .all(|item| !matches!(item, Focus::Detail(_)))
+        assert!(locations.iter().all(|item| {
+            !matches!(item, Focus::Detail(_) | Focus::Action(_))
+        }));
+        let account = super::order(Tab::Account, 1, true);
+        assert!(account.iter().all(|item| !matches!(item, Focus::Action(_))));
+        let dns = super::order(Tab::Dns, 0, false);
+        assert_eq!(dns.len(), 7);
+        assert_eq!(dns[5], Focus::Action(Action::CreateZone));
+        assert_eq!(*dns.last().unwrap(), Focus::Action(Action::CreateRecord));
+        let dns_open = super::order(Tab::Dns, 1, true);
+        assert_eq!(dns_open[5], Focus::Action(Action::CreateZone));
+        assert_eq!(dns_open[6], Focus::Action(Action::CreateRecord));
+        assert_eq!(dns_open[7], Focus::Row(0));
+        assert_eq!(dns_open[8], Focus::Action(Action::DeleteZone));
+        assert_eq!(
+            *dns_open.last().unwrap(),
+            Focus::Action(Action::DeleteRecord)
         );
     }
 
@@ -569,29 +748,50 @@ mod tests {
         assert_eq!(step_popup(PopupFocus::Force, false), PopupFocus::Confirm);
         assert_eq!(step_popup(PopupFocus::Confirm, true), PopupFocus::Force);
         assert_eq!(step_popup(PopupFocus::Force, true), PopupFocus::Cancel);
-        assert_eq!(step_key(KeyFocus::Cancel, false), KeyFocus::Input);
-        assert_eq!(step_key(KeyFocus::Input, true), KeyFocus::Cancel);
+        assert_eq!(
+            step_prompt(1, PromptFocus::Cancel, false),
+            PromptFocus::Field(0)
+        );
+        assert_eq!(
+            step_prompt(1, PromptFocus::Field(0), true),
+            PromptFocus::Cancel
+        );
+        assert_eq!(
+            step_prompt(0, PromptFocus::Submit, false),
+            PromptFocus::Cancel
+        );
+        assert_eq!(
+            step_prompt(2, PromptFocus::Field(0), false),
+            PromptFocus::Field(1)
+        );
+        assert_eq!(
+            step_prompt(2, PromptFocus::Field(1), false),
+            PromptFocus::Submit
+        );
     }
 
     #[test]
     fn a_split_stays_out_of_the_tab_order_and_cannot_collapse_a_pane() {
-        let items = order(Tab::Servers, 2);
+        let items = order(Tab::Servers, 2, true);
         assert!(items.iter().all(|item| !matches!(item, Focus::Split(_))));
         assert_eq!(clamp_list_width(1, 100), PANE_MIN);
         assert_eq!(clamp_list_width(99, 100), 100 - 1 - PANE_MIN);
         assert_eq!(default_list_width(100), 42);
-        assert_eq!(clamp_log_rows(1, 32), LOG_MIN);
-        assert_eq!(clamp_log_rows(4, 32), LOG_DEFAULT);
+        assert_eq!(clamp_log_rows_for(1, 32, 0), LOG_MIN);
+        assert_eq!(clamp_log_rows_for(4, 32, 0), LOG_DEFAULT);
         // 1 + 3 + 1 chrome, and 6 rows stay with the main panes.
-        assert_eq!(clamp_log_rows(100, 32), 32 - 5 - 6);
+        assert_eq!(clamp_log_rows_for(100, 32, 0), 32 - 5 - 6);
 
         let mut screen = Screen::default();
-        screen.prepare(Rect {
-            x: 0,
-            y: 0,
-            width: 100,
-            height: 32,
-        });
+        screen.layout(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 32,
+            },
+            0,
+        );
         assert_eq!(screen.list_width, 42);
         assert_eq!(screen.columns_split.width, 1);
         assert!(screen.columns_split.height >= 1);
@@ -608,5 +808,36 @@ mod tests {
         assert_eq!(screen.log_rows, LOG_DEFAULT + 2);
         screen.drag_rows_to(0);
         assert_eq!(screen.log_rows, 32 - 5 - 6);
+
+        let mut with_actions = Screen::default();
+        with_actions.layout(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 32,
+            },
+            ACTION_ROWS,
+        );
+        assert_eq!(with_actions.actions.y, with_actions.tabs.bottom());
+        assert_eq!(with_actions.actions.height, ACTION_ROWS);
+        assert_eq!(with_actions.body.y, with_actions.actions.bottom());
+        assert!(with_actions.body.height >= 6);
+        assert_eq!(
+            with_actions.log.y + with_actions.log.height,
+            with_actions.hints.y
+        );
+        with_actions.log_rows = 100;
+        with_actions.layout(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 32,
+            },
+            ACTION_ROWS,
+        );
+        // The actions row is one more row of chrome.
+        assert_eq!(with_actions.log_rows, 32 - 6 - 6);
     }
 }

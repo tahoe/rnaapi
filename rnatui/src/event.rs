@@ -42,7 +42,9 @@ fn on_key(app: &mut App, screen: &mut Screen, key: KeyEvent) -> Action {
             }
             return Action::Quit;
         }
-        KeyCode::Char('q') if !app.typing() => return Action::Quit,
+        KeyCode::Char('q') if !app.typing() && app.modal() == Modal::None => {
+            return Action::Quit;
+        }
         _ => {}
     }
     if ctrl || key.modifiers.contains(KeyModifiers::ALT) {
@@ -63,8 +65,16 @@ fn on_key(app: &mut App, screen: &mut Screen, key: KeyEvent) -> Action {
             app.focus_move(true)
         }
         KeyCode::Tab => app.focus_move(false),
-        KeyCode::Up => app.move_list(-1),
-        KeyCode::Down => app.move_list(1),
+        KeyCode::Up => {
+            if !app.nudge_choice(-1) {
+                app.move_list(-1);
+            }
+        }
+        KeyCode::Down => {
+            if !app.nudge_choice(1) {
+                app.move_list(1);
+            }
+        }
         KeyCode::Enter if !repeat => app.activate_focused(),
         KeyCode::Backspace if app.typing() => app.backspace(),
         KeyCode::Char(ch) if app.typing() => app.type_char(ch),
@@ -193,12 +203,15 @@ mod tests {
         let mut app = App::new("vapi2.netactuate.com");
         app.focus = Focus::Tab(Tab::Servers);
         let mut screen = Screen::default();
-        screen.prepare(ratatui::layout::Rect {
-            x: 0,
-            y: 0,
-            width: 100,
-            height: 32,
-        });
+        screen.layout(
+            ratatui::layout::Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 32,
+            },
+            0,
+        );
         let width = screen.list_width;
         let log = screen.log_rows;
         let column = screen.columns_split.x;

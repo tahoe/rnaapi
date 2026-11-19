@@ -3,8 +3,8 @@
 // under the GNU General Public License v3.0
 
 use crate::focus::{
-    DetailControl, Focus, KeyFocus, PopupFocus, ServerPane, Slot, Split, Tab,
-    order, starting_focus, step, step_key, step_popup,
+    Action, DetailControl, Focus, PopupFocus, PromptFocus, ServerPane, Slot,
+    Split, Tab, order, starting_focus, step, step_popup, step_prompt,
 };
 
 /// List tokens store the selection generation. Detail tokens store the row id.
@@ -82,6 +82,14 @@ pub struct ServerRow {
     pub status: String,
     pub kind: ServerKind,
     pub metal_id: Option<u32>,
+    /// Plan name from the virtual server list, such as `VR4x1x25`.
+    pub package: Option<String>,
+    /// `Server::plan_id` from the virtual server list.
+    /// Delete sends this value as `plan_id` and as `domU_package`.
+    pub plan_id: Option<u32>,
+    /// `Server::pkg_id` from the virtual server list.
+    /// Delete sends this value as the string `pkg_id`.
+    pub pkg_id: Option<u32>,
 }
 
 impl ServerRow {
@@ -98,6 +106,9 @@ impl ServerRow {
             status: state.to_string(),
             kind,
             metal_id: None,
+            package: None,
+            plan_id: None,
+            pkg_id: None,
         }
     }
 }
@@ -168,6 +179,10 @@ pub struct ServerDetail {
     pub location: Option<String>,
     pub extras: Vec<Field>,
     pub error: Option<String>,
+    /// `Server::plan_id` when this detail was already loaded.
+    pub plan_id: Option<u32>,
+    /// `Server::pkg_id` when this detail was already loaded.
+    pub pkg_id: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -183,10 +198,251 @@ pub struct PowerPopup {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct KeyPopup {
-    pub text: String,
-    pub focus: KeyFocus,
+pub struct Choice {
+    pub label: String,
+    pub value: String,
+}
+
+/// One list behind a create-server dropdown. An error leaves that dropdown empty.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Listed {
+    pub options: Vec<Choice>,
+    pub error: Option<String>,
+}
+
+/// The usage contract copied onto `Server::buy`.
+/// `contract_type` becomes `package_billing`. `id` becomes
+/// `package_billing_contract_id`. This is not `contract_mbpkgid`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UsageBilling {
+    pub contract_type: String,
+    pub id: String,
+}
+
+/// Plans, images, locations, SSH keys, and the usage contract for `Server::buy`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BuildChoices {
+    pub plans: Listed,
+    pub images: Listed,
+    pub locations: Listed,
+    pub keys: Listed,
+    pub billing: Option<UsageBilling>,
+    pub billing_error: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChoicePhase {
+    Loading,
+    Ready,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FieldKind {
+    Text,
+    Choice {
+        options: Vec<Choice>,
+        picked: Option<usize>,
+        phase: ChoicePhase,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PromptField {
+    pub label: String,
+    pub value: String,
+    pub kind: FieldKind,
+}
+
+impl PromptField {
+    /// Text the form shows. A dropdown shows its label, not the id it will send.
+    pub fn shown(&self) -> String {
+        match &self.kind {
+            FieldKind::Text => self.value.clone(),
+            FieldKind::Choice {
+                options,
+                picked,
+                phase,
+            } => match phase {
+                ChoicePhase::Loading => "loading".to_string(),
+                ChoicePhase::Failed => "unavailable".to_string(),
+                ChoicePhase::Ready => {
+                    if let Some(index) = *picked {
+                        options
+                            .get(index)
+                            .map(|choice| choice.label.clone())
+                            .unwrap_or_else(|| "choose".to_string())
+                    } else if options.is_empty() {
+                        "none".to_string()
+                    } else {
+                        "choose".to_string()
+                    }
+                }
+            },
+        }
+    }
+
+    pub fn is_text(&self) -> bool {
+        matches!(self.kind, FieldKind::Text)
+    }
+}
+
+/// A one-shot prompt. A confirm has no fields. A form has a few text fields.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Prompt {
+    pub title: String,
+    pub hint: String,
+    pub fields: Vec<PromptField>,
+    pub focus: PromptFocus,
+    pub submit_label: String,
+    pub kind: PromptKind,
     pub return_focus: Focus,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PromptKind {
+    NewKey,
+    UpdateKey {
+        id: u32,
+    },
+    DeleteKey {
+        id: u32,
+        name: String,
+    },
+    CreateServer,
+    RebuildServer {
+        mbpkgid: u32,
+        fqdn: String,
+    },
+    DeleteServer {
+        mbpkgid: u32,
+        fqdn: String,
+    },
+    /// Hostname matched. The radio picks `cancel_type`.
+    DeleteCancelType {
+        mbpkgid: u32,
+        fqdn: String,
+    },
+    /// Radio picked. Confirm sends `Package::cancel`.
+    ConfirmDeleteServer {
+        mbpkgid: u32,
+        fqdn: String,
+        cancel_type: String,
+    },
+    CreateZone,
+    DeleteZone {
+        id: u32,
+        name: String,
+    },
+    CreateRecord {
+        domain_id: i64,
+        zone: String,
+    },
+    UpdateRecord {
+        domain_id: i64,
+        zone: String,
+    },
+    /// The id is collected first, then the prompt becomes a named confirm.
+    DeleteRecord {
+        zone: String,
+    },
+    ConfirmDeleteRecord {
+        id: u32,
+        name: String,
+        zone: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BuildFields {
+    pub fqdn: Option<String>,
+    pub plan: Option<String>,
+    pub location: Option<i64>,
+    pub image: Option<i64>,
+    pub ssh_key_id: Option<i64>,
+    pub package_billing: Option<String>,
+    pub package_billing_contract_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecordFields {
+    pub id: Option<i64>,
+    pub name: Option<String>,
+    pub record_type: String,
+    pub content: String,
+    pub ttl: Option<i64>,
+    pub prio: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DnsRecord {
+    pub id: u32,
+    pub name: String,
+    pub record_type: String,
+    pub content: String,
+    pub ttl: Option<u32>,
+    pub prio: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ZoneView {
+    pub pane: Pane,
+    pub records: Vec<DnsRecord>,
+}
+
+/// A write that already has the values the library body needs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WriteOp {
+    UpdateKey {
+        id: u32,
+        name: String,
+        material: String,
+    },
+    DeleteKey {
+        id: u32,
+        name: String,
+    },
+    CreateServer(BuildFields),
+    RebuildServer {
+        mbpkgid: u32,
+        fqdn: String,
+        fields: BuildFields,
+    },
+    DeleteServer {
+        mbpkgid: u32,
+        fqdn: String,
+        cancel_type: String,
+        contract_id: i64,
+        package: Option<String>,
+        plan_id: Option<u32>,
+        pkg_id: Option<u32>,
+        /// Host id. `Server`, `ServerRow`, and `ServerDetail` have none.
+        host: Option<u32>,
+    },
+    CreateZone {
+        name: String,
+        zone_type: String,
+        ip: Option<String>,
+    },
+    DeleteZone {
+        id: u32,
+        name: String,
+    },
+    CreateRecord {
+        domain_id: i64,
+        zone: String,
+        fields: RecordFields,
+    },
+    UpdateRecord {
+        domain_id: i64,
+        zone: String,
+        fields: RecordFields,
+    },
+    DeleteRecord {
+        id: u32,
+        name: String,
+        zone: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -234,12 +490,29 @@ pub enum Request {
     ServerList(ServerListQuery),
     Power(PowerCommand),
     Ssh(Token),
-    SshCreate { token: Token, file: Option<String> },
+    SshCreate {
+        token: Token,
+        file: Option<String>,
+    },
     Locations(Token),
-    LocationDetail { token: Token, id: u32 },
+    LocationDetail {
+        token: Token,
+        id: u32,
+    },
     Zones(Token),
-    ZoneDetail { token: Token, id: u32 },
+    ZoneDetail {
+        token: Token,
+        id: u32,
+    },
     Account(Token),
+    Write {
+        token: Token,
+        op: WriteOp,
+    },
+    /// Plans, images, locations, and SSH keys for the open build form.
+    Catalog(Token),
+    /// `GET cloud/contract/usage` for a delete that does not have a contract yet.
+    UsageContract(Token),
 }
 
 impl Request {
@@ -255,7 +528,10 @@ impl Request {
             Request::Power(command) => command.token,
             Request::SshCreate { token, .. }
             | Request::LocationDetail { token, .. }
-            | Request::ZoneDetail { token, .. } => *token,
+            | Request::ZoneDetail { token, .. }
+            | Request::Write { token, .. }
+            | Request::Catalog(token)
+            | Request::UsageContract(token) => *token,
         }
     }
 }
@@ -302,11 +578,23 @@ pub enum Reply {
     },
     ZoneDetail {
         token: Token,
-        result: Result<Pane, String>,
+        result: Result<ZoneView, String>,
+    },
+    Write {
+        token: Token,
+        result: Result<String, String>,
     },
     Account {
         token: Token,
         result: Result<Pane, String>,
+    },
+    Catalog {
+        token: Token,
+        result: Result<BuildChoices, String>,
+    },
+    UsageContract {
+        token: Token,
+        result: Result<UsageBilling, String>,
     },
 }
 
@@ -343,10 +631,12 @@ pub struct App {
     pub server_line_window: u16,
     pub location_detail: Option<(u64, Pane)>,
     pub zone_detail: Option<(u64, Pane)>,
+    /// Records from the open zone, so a delete can name one.
+    pub zone_records: Vec<DnsRecord>,
     pub banner: Option<Banner>,
     log: Vec<Banner>,
     pub power: Option<PowerPopup>,
-    pub key: Option<KeyPopup>,
+    pub prompt: Option<Prompt>,
     pub list_scroll: usize,
     pub detail_scroll: u16,
     pub list_window: u16,
@@ -354,12 +644,14 @@ pub struct App {
     next_id: u64,
     selection_gen: u64,
     servers_selected: Option<u64>,
-    ssh_selected: Option<u64>,
+    pub(crate) ssh_selected: Option<u64>,
     location_selected: Option<u64>,
-    zone_selected: Option<u64>,
+    pub(crate) zone_selected: Option<u64>,
     power_inflight: Option<u64>,
     power_accepted: Option<u64>,
     power_revoked: Option<u64>,
+    /// Set from `ContractUsage` when the create-server catalog returns.
+    usage_billing: Option<UsageBilling>,
     tracks: [Track; TRACKS],
     pending: Vec<Request>,
 }
@@ -388,10 +680,11 @@ impl App {
             server_line_window: 8,
             location_detail: None,
             zone_detail: None,
+            zone_records: Vec::new(),
             banner: None,
             log: Vec::new(),
             power: None,
-            key: None,
+            prompt: None,
             list_scroll: 0,
             detail_scroll: 0,
             list_window: 8,
@@ -405,6 +698,7 @@ impl App {
             power_inflight: None,
             power_accepted: None,
             power_revoked: None,
+            usage_billing: None,
             tracks: [Track::default(); TRACKS],
             pending: Vec::new(),
         }
@@ -468,6 +762,18 @@ impl App {
         self.settle_focus();
     }
 
+    #[cfg(test)]
+    pub fn set_keys(&mut self, rows: Vec<SshRow>, selected: Option<u32>) {
+        self.keys = rows;
+        self.ssh_selected = selected.map(u64::from);
+    }
+
+    #[cfg(test)]
+    pub fn set_zones(&mut self, rows: Vec<ZoneRow>, selected: Option<u32>) {
+        self.zones = rows;
+        self.zone_selected = selected.map(u64::from);
+    }
+
     pub fn stop_accepting(&mut self) {
         self.accepting = false;
     }
@@ -479,17 +785,18 @@ impl App {
     pub fn modal(&self) -> crate::focus::Modal {
         if self.power.is_some() {
             crate::focus::Modal::Power
-        } else if self.key.is_some() {
-            crate::focus::Modal::Key
+        } else if self.prompt.is_some() {
+            crate::focus::Modal::Prompt
         } else {
             crate::focus::Modal::None
         }
     }
 
     pub fn typing(&self) -> bool {
-        self.key
-            .as_ref()
-            .is_some_and(|popup| popup.focus == KeyFocus::Input)
+        self.prompt.as_ref().is_some_and(|popup| {
+            matches!(popup.focus, PromptFocus::Field(index)
+                if popup.fields.get(index).is_some_and(|field| field.is_text()))
+        })
     }
 
     pub fn row_count(&self) -> usize {
@@ -560,6 +867,15 @@ impl App {
         if self.power_inflight.is_some() {
             return Some("Power change in progress");
         }
+        if self.is_loading(Slot::Write) {
+            return Some("Saving");
+        }
+        if self.is_loading(Slot::Catalog) && self.prompt.is_some() {
+            return Some("Loading choices");
+        }
+        if self.is_loading(Slot::Usage) && self.prompt.is_some() {
+            return Some("Loading usage contract");
+        }
         let slot = match self.tab {
             Tab::Servers if self.is_loading(Slot::Servers) => Slot::Servers,
             Tab::Servers if self.is_loading(Slot::ServerDetail) => {
@@ -593,6 +909,9 @@ impl App {
             Slot::Account => "Loading account",
             Slot::Power => "Power change in progress",
             Slot::ServerList => "Loading jobs",
+            Slot::Write => "Saving",
+            Slot::Catalog => "Loading choices",
+            Slot::Usage => "Loading usage contract",
         })
     }
 
@@ -602,8 +921,9 @@ impl App {
             popup.focus = step_popup(popup.focus, backward);
             return;
         }
-        if let Some(popup) = self.key.as_mut() {
-            popup.focus = step_key(popup.focus, backward);
+        if let Some(popup) = self.prompt.as_mut() {
+            popup.focus =
+                step_prompt(popup.fields.len(), popup.focus, backward);
             return;
         }
         // A divider is outside the Tab cycle. Resume from the control that
@@ -611,7 +931,8 @@ impl App {
         if matches!(self.focus, Focus::Split(_)) {
             self.focus = self.split_return;
         }
-        let items = order(self.tab, self.row_count());
+        let items =
+            order(self.tab, self.row_count(), self.selected_index().is_some());
         self.focus = step(&items, self.focus, backward);
     }
 
@@ -633,17 +954,19 @@ impl App {
             self.activate_power(focus);
             return;
         }
-        if let Some(focus) = self.key.as_ref().map(|popup| popup.focus) {
-            // Enter on the filename field submits. A click only focuses it.
-            if focus == KeyFocus::Input {
-                self.submit_key();
+        if let Some(focus) = self.prompt.as_ref().map(|popup| popup.focus) {
+            // Enter on a field moves to the next one, and submits on the last.
+            // A click only focuses the field.
+            if matches!(focus, PromptFocus::Field(_)) {
+                self.advance_prompt_field();
             } else {
-                self.activate_key(focus);
+                self.activate_prompt(focus);
             }
             return;
         }
         match self.focus {
             Focus::Tab(tab) => self.activate_tab(tab),
+            Focus::Action(action) => self.open_action(action),
             Focus::Row(index) => self.select_index(index),
             Focus::Detail(control) => self.activate_detail(control),
             Focus::ServerPane(pane) => self.activate_server_pane(pane),
@@ -663,13 +986,17 @@ impl App {
                 self.focus = Focus::Row(index);
                 self.select_index(index);
             }
+            Target::Action(action) => {
+                self.focus = Focus::Action(action);
+                self.open_action(action);
+            }
             Target::Detail(control) => {
                 self.focus = Focus::Detail(control);
                 self.activate_detail(control);
             }
             Target::ServerPane(pane) => self.activate_server_pane(pane),
             Target::Power(focus) => self.activate_power(focus),
-            Target::Key(focus) => self.activate_key(focus),
+            Target::Prompt(focus) => self.activate_prompt(focus),
         }
     }
 
@@ -724,26 +1051,80 @@ impl App {
     }
 
     pub fn type_char(&mut self, ch: char) {
-        let Some(popup) = self.key.as_mut() else {
+        let Some(field) = self.focused_field_mut() else {
             return;
         };
-        if popup.focus != KeyFocus::Input || popup.text.chars().count() >= 256 {
+        if !field.is_text() || field.value.chars().count() >= 2048 {
             return;
         }
-        popup.text.push(ch);
+        field.value.push(ch);
     }
 
     pub fn backspace(&mut self) {
-        let Some(popup) = self.key.as_mut() else {
+        let Some(field) = self.focused_field_mut() else {
             return;
         };
-        if popup.focus == KeyFocus::Input {
-            popup.text.pop();
+        if field.is_text() {
+            field.value.pop();
+            return;
+        }
+        field.value.clear();
+        if let FieldKind::Choice { picked, .. } = &mut field.kind {
+            *picked = None;
         }
     }
 
+    /// Move the open dropdown. `false` means this key is not on a dropdown.
+    pub fn nudge_choice(&mut self, delta: i32) -> bool {
+        let Some(field) = self.focused_field_mut() else {
+            return false;
+        };
+        let (next, value) = {
+            let FieldKind::Choice {
+                options,
+                picked,
+                phase,
+            } = &field.kind
+            else {
+                return false;
+            };
+            if *phase != ChoicePhase::Ready || options.is_empty() {
+                return true;
+            }
+            let len = options.len();
+            let next = match (*picked, delta.signum()) {
+                (None, -1) => len - 1,
+                (None, _) => 0,
+                (Some(index), step) => {
+                    let mut next = index as i32 + step;
+                    if next < 0 {
+                        next = len as i32 - 1;
+                    }
+                    if next >= len as i32 {
+                        next = 0;
+                    }
+                    next as usize
+                }
+            };
+            (next, options[next].value.clone())
+        };
+        if let FieldKind::Choice { picked, .. } = &mut field.kind {
+            *picked = Some(next);
+        }
+        field.value = value;
+        true
+    }
+
+    fn focused_field_mut(&mut self) -> Option<&mut PromptField> {
+        let popup = self.prompt.as_mut()?;
+        let PromptFocus::Field(index) = popup.focus else {
+            return None;
+        };
+        popup.fields.get_mut(index)
+    }
+
     pub fn open_power(&mut self, verb: PowerVerb) {
-        if self.power.is_some() || self.key.is_some() {
+        if self.power.is_some() || self.prompt.is_some() {
             return;
         }
         let Some(server) = self.selected_server().cloned() else {
@@ -794,7 +1175,7 @@ impl App {
             self.focus = popup.return_focus;
             return;
         }
-        if let Some(popup) = self.key.take() {
+        if let Some(popup) = self.prompt.take() {
             self.focus = popup.return_focus;
         }
     }
@@ -813,7 +1194,15 @@ impl App {
             self.power_inflight = None;
             self.power_accepted = None;
         }
+        let catalog = matches!(request, Request::Catalog(_));
+        let usage = matches!(request, Request::UsageContract(_));
         self.fail_token(token, "API is not configured".to_string());
+        if catalog {
+            self.fail_open_choices();
+        }
+        if usage && let Some(popup) = self.prompt.as_mut() {
+            popup.hint = "API is not configured".to_string();
+        }
     }
 
     pub fn apply(&mut self, reply: Reply) {
@@ -851,6 +1240,13 @@ impl App {
             Reply::Account { token, result } => {
                 self.apply_account(token, result)
             }
+            Reply::Write { token, result } => self.apply_write(token, result),
+            Reply::Catalog { token, result } => {
+                self.apply_catalog(token, result)
+            }
+            Reply::UsageContract { token, result } => {
+                self.apply_usage(token, result)
+            }
         }
     }
 
@@ -877,8 +1273,6 @@ impl App {
             DetailControl::On => self.open_power(PowerVerb::On),
             DetailControl::Off => self.open_power(PowerVerb::Off),
             DetailControl::Reboot => self.open_power(PowerVerb::Reboot),
-            DetailControl::Force => self.force = !self.force,
-            DetailControl::NewKey => self.open_key(),
         }
     }
 
@@ -906,43 +1300,497 @@ impl App {
         }
     }
 
-    fn activate_key(&mut self, focus: KeyFocus) {
-        if let Some(popup) = self.key.as_mut() {
+    fn activate_prompt(&mut self, focus: PromptFocus) {
+        if let Some(popup) = self.prompt.as_mut() {
             popup.focus = focus;
         }
         match focus {
-            KeyFocus::Input => {}
-            KeyFocus::Create => self.submit_key(),
-            KeyFocus::Cancel => self.cancel_popup(),
+            PromptFocus::Field(_) => {}
+            PromptFocus::Submit => self.submit_prompt(),
+            PromptFocus::Cancel => self.cancel_popup(),
         }
     }
 
-    fn open_key(&mut self) {
-        if self.power.is_some() || self.key.is_some() {
-            return;
-        }
-        self.key = Some(KeyPopup {
-            text: String::new(),
-            focus: KeyFocus::Input,
-            return_focus: Focus::Detail(DetailControl::NewKey),
-        });
-    }
-
-    fn submit_key(&mut self) {
-        let Some(popup) = self.key.take() else {
+    /// Enter on a field moves forward. The last field submits.
+    fn advance_prompt_field(&mut self) {
+        let Some(popup) = self.prompt.as_ref() else {
             return;
         };
-        let file = {
-            let trimmed = popup.text.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
+        let PromptFocus::Field(index) = popup.focus else {
+            return;
+        };
+        if index + 1 >= popup.fields.len() {
+            self.submit_prompt();
+            return;
+        }
+        if let Some(popup) = self.prompt.as_mut() {
+            popup.focus = PromptFocus::Field(index + 1);
+        }
+    }
+
+    fn open_action(&mut self, action: Action) {
+        if self.power.is_some() || self.prompt.is_some() {
+            return;
+        }
+        let back = Focus::Action(action);
+        let opened = match action {
+            Action::CreateServer => {
+                self.queue_catalog();
+                Some(form(
+                    "Create server",
+                    "Up and down pick a plan, image, location, or SSH key.",
+                    build_form_fields(),
+                    "Create",
+                    PromptKind::CreateServer,
+                    back,
+                ))
+            }
+            Action::RebuildServer => {
+                let Some(server) = self.selected_server().cloned() else {
+                    self.banner_error("Select a server first");
+                    return;
+                };
+                self.queue_catalog();
+                Some(form(
+                    format!("Rebuild {}", server.fqdn),
+                    format!(
+                        "mbpkgid {}. Up and down pick a list.",
+                        server.mbpkgid
+                    ),
+                    build_form_fields(),
+                    "Rebuild",
+                    PromptKind::RebuildServer {
+                        mbpkgid: server.mbpkgid,
+                        fqdn: server.fqdn,
+                    },
+                    back,
+                ))
+            }
+            Action::DeleteServer => {
+                let Some(server) = self.selected_server().cloned() else {
+                    self.banner_error("Select a server first");
+                    return;
+                };
+                Some(form(
+                    format!("Delete {}", server.fqdn),
+                    format!("mbpkgid {}", server.mbpkgid),
+                    vec![text_field("hostname", "")],
+                    "Delete",
+                    PromptKind::DeleteServer {
+                        mbpkgid: server.mbpkgid,
+                        fqdn: server.fqdn,
+                    },
+                    back,
+                ))
+            }
+            Action::NewKey => Some(form(
+                "New SSH key",
+                "Public key file, or empty to generate ~/.ssh/id_ed25519",
+                vec![text_field("file", "")],
+                "Create",
+                PromptKind::NewKey,
+                back,
+            )),
+            Action::UpdateKey => {
+                let Some(key) = self.selected_key().cloned() else {
+                    self.banner_error("Select an SSH key first");
+                    return;
+                };
+                Some(form(
+                    format!("Update {}", key.name),
+                    "Public key text, or a file. A bare name is read from ~/.ssh.",
+                    vec![
+                        text_field("name", &key.name),
+                        text_field("public key", ""),
+                    ],
+                    "Update",
+                    PromptKind::UpdateKey { id: key.id },
+                    back,
+                ))
+            }
+            Action::DeleteKey => {
+                let Some(key) = self.selected_key().cloned() else {
+                    self.banner_error("Select an SSH key first");
+                    return;
+                };
+                Some(form(
+                    delete_title(&key.name, &format!("ssh key {}", key.id)),
+                    format!("ssh key {}", key.id),
+                    Vec::new(),
+                    "Delete",
+                    PromptKind::DeleteKey {
+                        id: key.id,
+                        name: key.name,
+                    },
+                    back,
+                ))
+            }
+            Action::CreateZone => Some(form(
+                "New zone",
+                "Leave ip empty unless the zone needs one.",
+                vec![
+                    text_field("name", ""),
+                    text_field("type", "NATIVE"),
+                    text_field("ip", ""),
+                ],
+                "Create",
+                PromptKind::CreateZone,
+                back,
+            )),
+            Action::DeleteZone => {
+                let Some(zone) = self.selected_zone().cloned() else {
+                    self.banner_error("Select a zone first");
+                    return;
+                };
+                Some(form(
+                    delete_title(&zone.name, &format!("zone {}", zone.id)),
+                    format!("zone {}", zone.id),
+                    Vec::new(),
+                    "Delete",
+                    PromptKind::DeleteZone {
+                        id: zone.id,
+                        name: zone.name,
+                    },
+                    back,
+                ))
+            }
+            Action::CreateRecord => {
+                let Some(zone) = self.selected_zone().cloned() else {
+                    self.banner_error("Select a zone first");
+                    return;
+                };
+                Some(form(
+                    format!("New record in {}", zone.name),
+                    "type is A, AAAA, CNAME, MX, TXT, or another record type",
+                    record_form_fields(false),
+                    "Create",
+                    PromptKind::CreateRecord {
+                        domain_id: i64::from(zone.id),
+                        zone: zone.name,
+                    },
+                    back,
+                ))
+            }
+            Action::UpdateRecord => {
+                let Some(zone) = self.selected_zone().cloned() else {
+                    self.banner_error("Select a zone first");
+                    return;
+                };
+                Some(form(
+                    format!("Update record in {}", zone.name),
+                    self.record_hint(&zone.name),
+                    record_form_fields(true),
+                    "Update",
+                    PromptKind::UpdateRecord {
+                        domain_id: i64::from(zone.id),
+                        zone: zone.name,
+                    },
+                    back,
+                ))
+            }
+            Action::DeleteRecord => {
+                let Some(zone) = self.selected_zone().cloned() else {
+                    self.banner_error("Select a zone first");
+                    return;
+                };
+                Some(form(
+                    format!("Delete record in {}", zone.name),
+                    self.record_hint(&zone.name),
+                    vec![text_field("id", "")],
+                    "Delete",
+                    PromptKind::DeleteRecord { zone: zone.name },
+                    back,
+                ))
             }
         };
-        self.focus = popup.return_focus;
-        let token = self.issue(Slot::SshCreate, 0);
-        self.pending.push(Request::SshCreate { token, file });
+        self.prompt = opened;
+    }
+
+    fn record_hint(&self, zone: &str) -> String {
+        if self.zone_records.is_empty() {
+            return format!("record id in {zone}");
+        }
+        let listed = self
+            .zone_records
+            .iter()
+            .take(4)
+            .map(|record| format!("{} {}", record.id, record.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("id in {zone}: {listed}")
+    }
+
+    fn submit_prompt(&mut self) {
+        let Some(prompt) = self.prompt.clone() else {
+            return;
+        };
+        match self.prepare_write(&prompt) {
+            Ok(Prepared::Send(op)) => {
+                if self.write_busy() {
+                    self.reject_prompt("A change is already running");
+                    return;
+                }
+                self.prompt = None;
+                self.focus = prompt.return_focus;
+                let token = self.issue(Slot::Write, 0);
+                self.pending.push(Request::Write { token, op });
+            }
+            Ok(Prepared::Ssh(file)) => {
+                if self.write_busy() {
+                    self.reject_prompt("A change is already running");
+                    return;
+                }
+                self.prompt = None;
+                self.focus = prompt.return_focus;
+                let token = self.issue(Slot::SshCreate, 0);
+                self.pending.push(Request::SshCreate { token, file });
+            }
+            Ok(Prepared::Stay(next)) => self.prompt = Some(next),
+            Ok(Prepared::LoadUsage) => self.queue_usage_contract(),
+            Err(err) => self.reject_prompt(err),
+        }
+    }
+
+    /// `ContractUsage::get` while the confirm dialog stays open.
+    fn queue_usage_contract(&mut self) {
+        if self.is_loading(Slot::Usage) {
+            self.reject_prompt("usage contract is still loading");
+            return;
+        }
+        let token = self.issue(Slot::Usage, 0);
+        self.pending.push(Request::UsageContract(token));
+        if let Some(popup) = self.prompt.as_mut() {
+            popup.hint = "Loading usage contract".to_string();
+        }
+    }
+
+    fn write_busy(&self) -> bool {
+        self.is_loading(Slot::Write) || self.is_loading(Slot::SshCreate)
+    }
+
+    fn reject_prompt(&mut self, err: impl Into<String>) {
+        let err = err.into();
+        if let Some(popup) = self.prompt.as_mut() {
+            popup.hint = err.clone();
+        }
+        self.banner_error(err);
+    }
+
+    fn prepare_write(&self, prompt: &Prompt) -> Result<Prepared, String> {
+        match &prompt.kind {
+            PromptKind::NewKey => {
+                Ok(Prepared::Ssh(optional_text(field(prompt, "file"))))
+            }
+            PromptKind::UpdateKey { id } => {
+                let name = required_text(field(prompt, "name"), "name")?;
+                let material =
+                    required_text(field(prompt, "public key"), "public key")?;
+                Ok(Prepared::Send(WriteOp::UpdateKey {
+                    id: *id,
+                    name,
+                    material,
+                }))
+            }
+            PromptKind::DeleteKey { id, name } => {
+                Ok(Prepared::Send(WriteOp::DeleteKey {
+                    id: *id,
+                    name: name.clone(),
+                }))
+            }
+            PromptKind::CreateServer => {
+                // buy_build needs plan, location, image, fqdn, and an ssh key id.
+                create_server_ready(prompt)?;
+                let mut fields = build_fields(prompt)?;
+                if let Some(billing) = &self.usage_billing {
+                    fields.package_billing =
+                        Some(billing.contract_type.clone());
+                    fields.package_billing_contract_id =
+                        Some(billing.id.clone());
+                }
+                Ok(Prepared::Send(WriteOp::CreateServer(fields)))
+            }
+            PromptKind::RebuildServer { mbpkgid, fqdn } => {
+                Ok(Prepared::Send(WriteOp::RebuildServer {
+                    mbpkgid: *mbpkgid,
+                    fqdn: fqdn.clone(),
+                    fields: build_fields(prompt)?,
+                }))
+            }
+            PromptKind::DeleteServer { mbpkgid, fqdn } => {
+                let typed =
+                    required_text(field(prompt, "hostname"), "hostname")?;
+                if typed != fqdn.trim() {
+                    return Err("hostname does not match".into());
+                }
+                Ok(Prepared::Stay(form(
+                    format!("Delete {fqdn}"),
+                    format!(
+                        "Up and down pick {CANCEL_IMMEDIATE} or {CANCEL_END_OF_CYCLE}."
+                    ),
+                    vec![cancel_type_field()],
+                    "Delete",
+                    PromptKind::DeleteCancelType {
+                        mbpkgid: *mbpkgid,
+                        fqdn: fqdn.clone(),
+                    },
+                    prompt.return_focus,
+                )))
+            }
+            PromptKind::DeleteCancelType { mbpkgid, fqdn } => {
+                let cancel_type =
+                    required_text(field(prompt, "cancel type"), "cancel type")?;
+                Ok(Prepared::Stay(form(
+                    "Confirm cancellation",
+                    format!("{fqdn} mbpkgid {mbpkgid}"),
+                    Vec::new(),
+                    "Confirm cancellation",
+                    PromptKind::ConfirmDeleteServer {
+                        mbpkgid: *mbpkgid,
+                        fqdn: fqdn.clone(),
+                        cancel_type,
+                    },
+                    prompt.return_focus,
+                )))
+            }
+            PromptKind::ConfirmDeleteServer {
+                mbpkgid,
+                fqdn,
+                cancel_type,
+            } => match &self.usage_billing {
+                Some(billing) => {
+                    let contract_id = contract_id_from(billing)?;
+                    Ok(Prepared::Send(WriteOp::DeleteServer {
+                        mbpkgid: *mbpkgid,
+                        fqdn: fqdn.clone(),
+                        cancel_type: cancel_type.clone(),
+                        contract_id,
+                        package: self.package_for_delete(*mbpkgid),
+                        plan_id: self.plan_id_for_delete(*mbpkgid),
+                        pkg_id: self.pkg_id_for_delete(*mbpkgid),
+                        host: self.host_for_delete(*mbpkgid),
+                    }))
+                }
+                None => Ok(Prepared::LoadUsage),
+            },
+            PromptKind::CreateZone => {
+                let name = required_text(field(prompt, "name"), "name")?;
+                let zone_type = optional_text(field(prompt, "type"))
+                    .unwrap_or_else(|| "NATIVE".to_string());
+                let ip = optional_text(field(prompt, "ip"));
+                Ok(Prepared::Send(WriteOp::CreateZone {
+                    name,
+                    zone_type,
+                    ip,
+                }))
+            }
+            PromptKind::DeleteZone { id, name } => {
+                Ok(Prepared::Send(WriteOp::DeleteZone {
+                    id: *id,
+                    name: name.clone(),
+                }))
+            }
+            PromptKind::CreateRecord { domain_id, zone } => {
+                Ok(Prepared::Send(WriteOp::CreateRecord {
+                    domain_id: *domain_id,
+                    zone: zone.clone(),
+                    fields: self.record_fields(prompt, None)?,
+                }))
+            }
+            PromptKind::UpdateRecord { domain_id, zone } => {
+                let id = required_u32(field(prompt, "id"), "id")?;
+                Ok(Prepared::Send(WriteOp::UpdateRecord {
+                    domain_id: *domain_id,
+                    zone: zone.clone(),
+                    fields: self.record_fields(prompt, Some(id))?,
+                }))
+            }
+            PromptKind::DeleteRecord { zone } => {
+                let id = required_u32(field(prompt, "id"), "id")?;
+                let name = self.record_name(id);
+                Ok(Prepared::Stay(form(
+                    delete_title(&name, &format!("record {id}")),
+                    format!("record {id} in {zone}"),
+                    Vec::new(),
+                    "Delete",
+                    PromptKind::ConfirmDeleteRecord {
+                        id,
+                        name,
+                        zone: zone.clone(),
+                    },
+                    prompt.return_focus,
+                )))
+            }
+            PromptKind::ConfirmDeleteRecord { id, name, zone } => {
+                Ok(Prepared::Send(WriteOp::DeleteRecord {
+                    id: *id,
+                    name: name.clone(),
+                    zone: zone.clone(),
+                }))
+            }
+        }
+    }
+
+    fn record_name(&self, id: u32) -> String {
+        self.zone_records
+            .iter()
+            .find(|record| record.id == id)
+            .map(|record| {
+                if !record.name.is_empty() {
+                    record.name.clone()
+                } else if !record.record_type.is_empty() {
+                    record.record_type.clone()
+                } else {
+                    format!("record {id}")
+                }
+            })
+            .unwrap_or_else(|| format!("record {id}"))
+    }
+
+    /// Blank type, content, name, ttl, and prio keep the loaded record's values.
+    fn record_fields(
+        &self, prompt: &Prompt, id: Option<u32>,
+    ) -> Result<RecordFields, String> {
+        let stored = id.and_then(|id| {
+            self.zone_records.iter().find(|record| record.id == id)
+        });
+        let mut name = optional_text(field(prompt, "name"));
+        let mut record_type =
+            optional_text(field(prompt, "type")).unwrap_or_default();
+        let mut content =
+            optional_text(field(prompt, "content")).unwrap_or_default();
+        let mut ttl = optional_i64(field(prompt, "ttl"), "ttl")?;
+        let mut prio = optional_i64(field(prompt, "prio"), "prio")?;
+        if let Some(stored) = stored {
+            if name.is_none() && !stored.name.is_empty() {
+                name = Some(stored.name.clone());
+            }
+            if record_type.is_empty() {
+                record_type = stored.record_type.clone();
+            }
+            if content.is_empty() {
+                content = stored.content.clone();
+            }
+            if ttl.is_none() {
+                ttl = stored.ttl.map(i64::from);
+            }
+            if prio.is_none() {
+                prio = stored.prio.map(i64::from);
+            }
+        }
+        if record_type.is_empty() {
+            return Err("type is required".into());
+        }
+        if content.is_empty() {
+            return Err("content is required".into());
+        }
+        Ok(RecordFields {
+            id: id.map(i64::from),
+            name,
+            record_type,
+            content,
+            ttl,
+            prio,
+        })
     }
 
     fn select_index(&mut self, index: usize) {
@@ -1022,9 +1870,19 @@ impl App {
                 self.clear_server_lines();
             }
             Tab::Locations => self.location_detail = None,
-            Tab::Dns => self.zone_detail = None,
+            Tab::Dns => {
+                self.zone_detail = None;
+                self.zone_records.clear();
+            }
             Tab::SshKeys | Tab::Account => {}
         }
+    }
+
+    fn queue_catalog(&mut self) {
+        // A new form must not reuse a contract from the previous attempt.
+        self.usage_billing = None;
+        let token = self.issue(Slot::Catalog, 0);
+        self.pending.push(Request::Catalog(token));
     }
 
     fn queue_list(&mut self) {
@@ -1307,6 +2165,12 @@ impl App {
                     if let Some(location) = detail.location {
                         row.location = location;
                     }
+                    if let Some(plan_id) = detail.plan_id {
+                        row.plan_id = Some(plan_id);
+                    }
+                    if let Some(pkg_id) = detail.pkg_id {
+                        row.pkg_id = Some(pkg_id);
+                    }
                 }
                 self.server_detail_for = Some(token.selection);
                 self.server_extras = detail.extras;
@@ -1364,17 +2228,21 @@ impl App {
     }
 
     fn apply_zone_detail(
-        &mut self, token: Token, result: Result<Pane, String>,
+        &mut self, token: Token, result: Result<ZoneView, String>,
     ) {
         let id = token.selection;
-        self.apply_pane(
-            token,
-            result,
-            format!("zone {id} loaded"),
-            |app, pane| {
-                app.zone_detail = Some((id, pane));
-            },
-        );
+        if !self.accept_detail(token) {
+            return;
+        }
+        self.finish(token);
+        match result {
+            Ok(view) => {
+                self.zone_records = view.records;
+                self.zone_detail = Some((id, view.pane));
+                self.banner_ok(format!("zone {id} loaded"));
+            }
+            Err(err) => self.banner_error(err),
+        }
     }
 
     fn apply_account(&mut self, token: Token, result: Result<Pane, String>) {
@@ -1426,6 +2294,238 @@ impl App {
             Ok(text) => {
                 self.banner_ok(text);
                 if self.tab == Tab::Servers {
+                    self.queue_list();
+                }
+            }
+            Err(err) => self.banner_error(err),
+        }
+    }
+
+    fn apply_catalog(
+        &mut self, token: Token, result: Result<BuildChoices, String>,
+    ) {
+        if self.track(Slot::Catalog).latest != token.request_id {
+            return;
+        }
+        self.finish(token);
+        let choices = match result {
+            Ok(choices) => choices,
+            Err(err) => {
+                self.usage_billing = None;
+                self.fail_open_choices();
+                if self.prompt_is_build() {
+                    self.banner_error(err);
+                }
+                return;
+            }
+        };
+        let create = self.prompt.as_ref().is_some_and(|prompt| {
+            matches!(prompt.kind, PromptKind::CreateServer)
+        });
+        if create {
+            self.usage_billing = choices.billing.clone();
+        }
+        if !self.prompt_is_build() {
+            return;
+        }
+        let mut notes = Vec::new();
+        if create && let Some(err) = &choices.billing_error {
+            notes.push(format!("usage contract: {err}"));
+        }
+        self.fill_choice("plan", choices.plans, &mut notes);
+        self.fill_choice("image", choices.images, &mut notes);
+        self.fill_choice("location", choices.locations, &mut notes);
+        self.fill_choice("ssh key", choices.keys, &mut notes);
+        if notes.is_empty() {
+            return;
+        }
+        let note = notes.join("; ");
+        if let Some(prompt) = self.prompt.as_mut() {
+            prompt.hint = note.clone();
+        }
+        self.banner_error(note);
+    }
+
+    fn prompt_is_build(&self) -> bool {
+        self.prompt.as_ref().is_some_and(|prompt| {
+            matches!(
+                prompt.kind,
+                PromptKind::CreateServer | PromptKind::RebuildServer { .. }
+            )
+        })
+    }
+
+    fn fill_choice(
+        &mut self, label: &str, listed: Listed, notes: &mut Vec<String>,
+    ) {
+        if let Some(err) = listed.error.as_ref() {
+            notes.push(format!("{label}: {err}"));
+        }
+        let Some(prompt) = self.prompt.as_mut() else {
+            return;
+        };
+        let Some(field) =
+            prompt.fields.iter_mut().find(|field| field.label == label)
+        else {
+            return;
+        };
+        if !matches!(field.kind, FieldKind::Choice { .. }) {
+            return;
+        }
+        if listed.error.is_some() {
+            field.kind = FieldKind::Choice {
+                options: Vec::new(),
+                picked: None,
+                phase: ChoicePhase::Failed,
+            };
+            field.value.clear();
+            return;
+        }
+        field.kind = FieldKind::Choice {
+            options: listed.options,
+            picked: None,
+            phase: ChoicePhase::Ready,
+        };
+        field.value.clear();
+    }
+
+    fn fail_open_choices(&mut self) {
+        let Some(prompt) = self.prompt.as_mut() else {
+            return;
+        };
+        if !matches!(
+            prompt.kind,
+            PromptKind::CreateServer | PromptKind::RebuildServer { .. }
+        ) {
+            return;
+        }
+        for field in &mut prompt.fields {
+            if matches!(field.kind, FieldKind::Choice { .. }) {
+                field.kind = FieldKind::Choice {
+                    options: Vec::new(),
+                    picked: None,
+                    phase: ChoicePhase::Failed,
+                };
+                field.value.clear();
+            }
+        }
+    }
+
+    fn apply_usage(
+        &mut self, token: Token, result: Result<UsageBilling, String>,
+    ) {
+        if self.track(Slot::Usage).latest != token.request_id {
+            return;
+        }
+        self.finish(token);
+        let waiting = self.prompt.as_ref().is_some_and(|prompt| {
+            matches!(prompt.kind, PromptKind::ConfirmDeleteServer { .. })
+        });
+        let billing = match result {
+            Ok(billing) => billing,
+            Err(err) => {
+                if waiting {
+                    self.reject_prompt(err);
+                }
+                return;
+            }
+        };
+        let contract_id = match contract_id_from(&billing) {
+            Ok(id) => id,
+            Err(err) => {
+                if waiting {
+                    self.reject_prompt(err);
+                }
+                return;
+            }
+        };
+        self.usage_billing = Some(billing);
+        if !waiting {
+            return;
+        }
+        self.send_delete(contract_id);
+    }
+
+    fn send_delete(&mut self, contract_id: i64) {
+        let Some(prompt) = self.prompt.clone() else {
+            return;
+        };
+        let PromptKind::ConfirmDeleteServer {
+            mbpkgid,
+            fqdn,
+            cancel_type,
+        } = prompt.kind
+        else {
+            return;
+        };
+        if self.write_busy() {
+            self.reject_prompt("A change is already running");
+            return;
+        }
+        self.prompt = None;
+        self.focus = prompt.return_focus;
+        let token = self.issue(Slot::Write, 0);
+        self.pending.push(Request::Write {
+            token,
+            op: WriteOp::DeleteServer {
+                mbpkgid,
+                fqdn,
+                cancel_type,
+                contract_id,
+                package: self.package_for_delete(mbpkgid),
+                plan_id: self.plan_id_for_delete(mbpkgid),
+                pkg_id: self.pkg_id_for_delete(mbpkgid),
+                host: self.host_for_delete(mbpkgid),
+            },
+        });
+    }
+
+    /// Plan name on the server being deleted. An empty name is omitted.
+    fn package_for_delete(&self, mbpkgid: u32) -> Option<String> {
+        self.servers
+            .iter()
+            .find(|row| row.mbpkgid == mbpkgid)
+            .and_then(|row| {
+                row.package
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_string)
+            })
+    }
+
+    /// `Server::plan_id` on the server being deleted. Missing stays omitted.
+    fn plan_id_for_delete(&self, mbpkgid: u32) -> Option<u32> {
+        self.servers
+            .iter()
+            .find(|row| row.mbpkgid == mbpkgid)
+            .and_then(|row| row.plan_id)
+    }
+
+    /// `Server::pkg_id` on the server being deleted. Missing stays omitted.
+    fn pkg_id_for_delete(&self, mbpkgid: u32) -> Option<u32> {
+        self.servers
+            .iter()
+            .find(|row| row.mbpkgid == mbpkgid)
+            .and_then(|row| row.pkg_id)
+    }
+
+    /// Host id on the server being deleted.
+    /// `Server`, `ServerRow`, and `ServerDetail` have no host id.
+    /// `MetalServer::hostname` and `Server::fqdn` are names, so this stays unset.
+    fn host_for_delete(&self, _mbpkgid: u32) -> Option<u32> {
+        None
+    }
+
+    fn apply_write(&mut self, token: Token, result: Result<String, String>) {
+        if self.track(Slot::Write).latest != token.request_id {
+            return;
+        }
+        self.finish(token);
+        match result {
+            Ok(text) => {
+                self.banner_ok(text);
+                if self.tab == token.tab {
                     self.queue_list();
                 }
             }
@@ -1540,13 +2640,14 @@ impl App {
     }
 
     fn normalize_focus(&mut self) {
-        if self.power.is_some() || self.key.is_some() {
+        if self.power.is_some() || self.prompt.is_some() {
             return;
         }
         if matches!(self.focus, Focus::Split(_)) {
             return;
         }
-        let items = order(self.tab, self.row_count());
+        let items =
+            order(self.tab, self.row_count(), self.selected_index().is_some());
         if items.contains(&self.focus) {
             return;
         }
@@ -1619,6 +2720,242 @@ impl App {
     }
 }
 
+enum Prepared {
+    Send(WriteOp),
+    Ssh(Option<String>),
+    Stay(Prompt),
+    /// Confirm is waiting on `ContractUsage::get`. The dialog stays open.
+    LoadUsage,
+}
+
+/// Portal delete sends `Immediate`. The v2 spec types `cancel_type` as a
+/// string and does not name the end-of-cycle value.
+const CANCEL_IMMEDIATE: &str = "Immediate";
+const CANCEL_END_OF_CYCLE: &str = "End of Billing Cycle";
+
+fn form(
+    title: impl Into<String>, hint: impl Into<String>,
+    fields: Vec<PromptField>, submit: &str, kind: PromptKind,
+    return_focus: Focus,
+) -> Prompt {
+    let focus = if fields.is_empty() {
+        PromptFocus::Submit
+    } else {
+        PromptFocus::Field(0)
+    };
+    Prompt {
+        title: title.into(),
+        hint: hint.into(),
+        fields,
+        focus,
+        submit_label: submit.to_string(),
+        kind,
+        return_focus,
+    }
+}
+
+fn text_field(label: &str, value: &str) -> PromptField {
+    PromptField {
+        label: label.to_string(),
+        value: value.to_string(),
+        kind: FieldKind::Text,
+    }
+}
+
+fn cancel_type_field() -> PromptField {
+    PromptField {
+        label: "cancel type".to_string(),
+        value: String::new(),
+        kind: FieldKind::Choice {
+            options: vec![
+                Choice {
+                    label: CANCEL_IMMEDIATE.to_string(),
+                    value: CANCEL_IMMEDIATE.to_string(),
+                },
+                Choice {
+                    label: CANCEL_END_OF_CYCLE.to_string(),
+                    value: CANCEL_END_OF_CYCLE.to_string(),
+                },
+            ],
+            picked: None,
+            phase: ChoicePhase::Ready,
+        },
+    }
+}
+
+fn contract_id_from(billing: &UsageBilling) -> Result<i64, String> {
+    billing
+        .id
+        .trim()
+        .parse::<i64>()
+        .map_err(|_| "id is missing".to_string())
+}
+
+fn choice_field(label: &str) -> PromptField {
+    PromptField {
+        label: label.to_string(),
+        value: String::new(),
+        kind: FieldKind::Choice {
+            options: Vec::new(),
+            picked: None,
+            phase: ChoicePhase::Loading,
+        },
+    }
+}
+
+fn build_form_fields() -> Vec<PromptField> {
+    vec![
+        text_field("fqdn", ""),
+        choice_field("plan"),
+        choice_field("location"),
+        choice_field("image"),
+        choice_field("ssh key"),
+    ]
+}
+
+fn record_form_fields(with_id: bool) -> Vec<PromptField> {
+    let mut fields = Vec::new();
+    if with_id {
+        fields.push(text_field("id", ""));
+    }
+    fields.extend([
+        text_field("name", ""),
+        text_field("type", ""),
+        text_field("content", ""),
+        text_field("ttl", ""),
+        text_field("prio", ""),
+    ]);
+    fields
+}
+
+fn delete_title(name: &str, fallback: &str) -> String {
+    if name.is_empty() {
+        format!("Delete {fallback}")
+    } else {
+        format!("Delete {name}")
+    }
+}
+
+fn field<'a>(prompt: &'a Prompt, label: &str) -> &'a str {
+    prompt
+        .fields
+        .iter()
+        .find(|field| field.label == label)
+        .map(|field| field.value.as_str())
+        .unwrap_or("")
+}
+
+fn build_fields(prompt: &Prompt) -> Result<BuildFields, String> {
+    Ok(BuildFields {
+        fqdn: optional_text(field(prompt, "fqdn")),
+        plan: optional_text(field(prompt, "plan")),
+        location: optional_i64(field(prompt, "location"), "location")?,
+        image: optional_i64(field(prompt, "image"), "image")?,
+        ssh_key_id: optional_i64(field(prompt, "ssh key"), "ssh key")?,
+        package_billing: None,
+        package_billing_contract_id: None,
+    })
+}
+
+/// `Server::buy` stays unsent until plan, location, image, fqdn, and an ssh
+/// key id are set. A missing usage contract does not drop those fields.
+/// A dropdown that is still loading or failed is named on the form.
+fn create_server_ready(prompt: &Prompt) -> Result<(), String> {
+    let mut loading = Vec::new();
+    let mut failed = Vec::new();
+    let mut missing = Vec::new();
+    if field(prompt, "fqdn").trim().is_empty() {
+        missing.push("fqdn");
+    }
+    for label in ["plan", "location", "image", "ssh key"] {
+        match choice_phase(prompt, label) {
+            Some(ChoicePhase::Loading) => loading.push(label),
+            Some(ChoicePhase::Failed) => failed.push(label),
+            _ => {
+                if field(prompt, label).trim().is_empty() {
+                    missing.push(label);
+                }
+            }
+        }
+    }
+    if !loading.is_empty() {
+        return Err(state_line(
+            &loading,
+            "is still loading",
+            "are still loading",
+        ));
+    }
+    if !failed.is_empty() {
+        return Err(state_line(&failed, "is unavailable", "are unavailable"));
+    }
+    if !missing.is_empty() {
+        return Err(state_line(&missing, "is required", "are required"));
+    }
+    Ok(())
+}
+
+fn choice_phase(prompt: &Prompt, label: &str) -> Option<ChoicePhase> {
+    let field = prompt.fields.iter().find(|field| field.label == label)?;
+    match &field.kind {
+        FieldKind::Choice { phase, .. } => Some(*phase),
+        FieldKind::Text => None,
+    }
+}
+
+fn state_line(names: &[&str], one: &str, many: &str) -> String {
+    let verb = if names.len() == 1 { one } else { many };
+    format!("{} {verb}", name_list(names))
+}
+
+fn name_list(names: &[&str]) -> String {
+    let Some((last, head)) = names.split_last() else {
+        return String::new();
+    };
+    match head {
+        [] => (*last).to_string(),
+        [only] => format!("{only} and {last}"),
+        _ => format!("{}, and {last}", head.join(", ")),
+    }
+}
+
+fn required_text(value: &str, label: &str) -> Result<String, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(format!("{label} is required"));
+    }
+    Ok(value.to_string())
+}
+
+fn optional_text(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn optional_i64(value: &str, label: &str) -> Result<Option<i64>, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    value
+        .parse::<i64>()
+        .map(Some)
+        .map_err(|_| format!("{label} must be a number"))
+}
+
+fn required_u32(value: &str, label: &str) -> Result<u32, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(format!("{label} is required"));
+    }
+    value
+        .parse::<u32>()
+        .map_err(|_| format!("{label} must be a number"))
+}
+
 fn position<T>(
     id: Option<u64>, rows: &[T], key: impl Fn(&T) -> u64,
 ) -> Option<usize> {
@@ -1626,7 +2963,7 @@ fn position<T>(
     rows.iter().position(|row| key(row) == id)
 }
 
-const TRACKS: usize = 11;
+const TRACKS: usize = 14;
 
 fn slot_index(slot: Slot) -> usize {
     match slot {
@@ -1641,6 +2978,9 @@ fn slot_index(slot: Slot) -> usize {
         Slot::Account => 8,
         Slot::Power => 9,
         Slot::ServerList => 10,
+        Slot::Write => 11,
+        Slot::Catalog => 12,
+        Slot::Usage => 13,
     }
 }
 
@@ -1985,6 +3325,8 @@ mod tests {
                 location: None,
                 extras: Vec::new(),
                 error: None,
+                plan_id: None,
+                pkg_id: None,
             }),
         });
         assert_eq!(app.servers_selected, Some(1002));
@@ -2051,6 +3393,8 @@ mod tests {
                 location: None,
                 extras: Vec::new(),
                 error: None,
+                plan_id: None,
+                pkg_id: None,
             }),
         });
         assert!(app.status_lines().is_empty());
@@ -2325,9 +3669,9 @@ mod tests {
     }
 
     #[test]
-    fn server_panes_follow_force_and_enter_selects_one() {
+    fn server_panes_follow_the_right_actions_and_enter_selects_one() {
         let mut app = servers(&[1001, 1002]);
-        app.focus = Focus::Detail(DetailControl::Force);
+        app.focus = Focus::Action(Action::DeleteServer);
         app.focus_move(false);
         assert_eq!(app.focus, Focus::ServerPane(ServerPane::Jobs));
         assert_eq!(app.server_pane, ServerPane::Jobs);
@@ -2431,5 +3775,645 @@ mod tests {
             labels,
             ["Servers", "SSH keys", "Locations", "DNS", "Account"]
         );
+    }
+
+    #[test]
+    fn delete_server_asks_for_the_hostname_then_confirms() {
+        let mut app = servers(&[1001]);
+        app.servers[0].fqdn = "web-01.example".into();
+        app.servers[0].package = Some("VR4x1x25".into());
+        app.servers[0].plan_id = Some(42);
+        app.servers[0].pkg_id = Some(9);
+        app.focus = Focus::Action(Action::DeleteServer);
+        app.activate_focused();
+        let prompt = app.prompt.as_ref().expect("hostname");
+        assert!(prompt.title.contains("web-01.example"), "{}", prompt.title);
+        assert!(prompt.hint.contains("1001"), "{}", prompt.hint);
+        assert_eq!(prompt.fields.len(), 1);
+        assert_eq!(prompt.fields[0].label, "hostname");
+        assert!(prompt.fields[0].is_text());
+        assert!(app.pending.is_empty());
+
+        app.type_char('x');
+        app.activate_focused();
+        let prompt = app.prompt.as_ref().expect("stays on the hostname");
+        assert!(prompt.hint.contains("does not match"), "{}", prompt.hint);
+        assert!(prompt.fields.iter().any(|field| field.label == "hostname"));
+        assert!(app.pending.is_empty());
+
+        app.backspace();
+        for ch in "web-01.example".chars() {
+            app.type_char(ch);
+        }
+        app.activate_focused();
+        let prompt = app.prompt.as_ref().expect("cancel type");
+        assert_eq!(prompt.fields.len(), 1);
+        assert_eq!(prompt.fields[0].label, "cancel type");
+        assert!(!prompt.fields[0].is_text());
+        match &prompt.fields[0].kind {
+            FieldKind::Choice {
+                options,
+                picked,
+                phase,
+            } => {
+                assert_eq!(*phase, ChoicePhase::Ready);
+                assert!(picked.is_none());
+                let values = options
+                    .iter()
+                    .map(|choice| choice.value.as_str())
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    values,
+                    [super::CANCEL_IMMEDIATE, super::CANCEL_END_OF_CYCLE]
+                );
+            }
+            other => panic!("expected a cancel type radio, got {other:?}"),
+        }
+        app.activate_focused();
+        let prompt = app.prompt.as_ref().expect("stays on the radio");
+        assert!(prompt.hint.contains("required"), "{}", prompt.hint);
+        assert_eq!(prompt.fields[0].label, "cancel type");
+        assert!(app.pending.is_empty());
+
+        assert!(app.nudge_choice(1));
+        assert_eq!(
+            app.prompt.as_ref().unwrap().fields[0].value,
+            super::CANCEL_IMMEDIATE
+        );
+        app.activate_focused();
+        let prompt = app.prompt.as_ref().expect("confirm");
+        assert_eq!(prompt.title, "Confirm cancellation");
+        assert_eq!(prompt.submit_label, "Confirm cancellation");
+        assert!(prompt.fields.is_empty());
+        assert!(prompt.hint.contains("1001"), "{}", prompt.hint);
+        assert!(app.pending.is_empty());
+        app.activate_focused();
+        let token = match app.drain_requests().as_slice() {
+            [Request::UsageContract(token)] => *token,
+            other => panic!("expected a usage contract get, got {other:?}"),
+        };
+        assert!(
+            app.prompt.as_ref().is_some_and(|prompt| {
+                prompt.title == "Confirm cancellation"
+            })
+        );
+        app.apply(Reply::UsageContract {
+            token,
+            result: Err("id is missing".into()),
+        });
+        let prompt = app.prompt.as_ref().expect("dialog stays open");
+        assert_eq!(prompt.title, "Confirm cancellation");
+        assert!(prompt.hint.contains("id is missing"), "{}", prompt.hint);
+        assert!(
+            app.pending
+                .iter()
+                .all(|request| !matches!(request, Request::Write { .. }))
+        );
+
+        app.activate_focused();
+        let token = match app.drain_requests().as_slice() {
+            [Request::UsageContract(token)] => *token,
+            other => {
+                panic!("expected another usage contract get, got {other:?}")
+            }
+        };
+        app.apply(Reply::UsageContract {
+            token,
+            result: Ok(UsageBilling {
+                contract_type: "usage".into(),
+                id: "7".into(),
+            }),
+        });
+        match app.pending.as_slice() {
+            [
+                Request::Write {
+                    op:
+                        WriteOp::DeleteServer {
+                            mbpkgid,
+                            fqdn,
+                            cancel_type,
+                            contract_id,
+                            package,
+                            plan_id,
+                            pkg_id,
+                            host,
+                        },
+                    ..
+                },
+            ] => {
+                assert_eq!(*mbpkgid, 1001);
+                assert_eq!(fqdn, "web-01.example");
+                assert_eq!(cancel_type, super::CANCEL_IMMEDIATE);
+                assert_eq!(*contract_id, 7);
+                assert_eq!(package.as_deref(), Some("VR4x1x25"));
+                assert_eq!(*plan_id, Some(42));
+                assert_eq!(*pkg_id, Some(9));
+                assert!(host.is_none());
+                assert_ne!(*contract_id, i64::from(*mbpkgid));
+                assert_ne!(*plan_id, Some(*mbpkgid));
+            }
+            other => panic!("expected a server delete, got {other:?}"),
+        }
+        assert!(app.prompt.is_none());
+    }
+
+    #[test]
+    fn delete_uses_the_loaded_usage_contract() {
+        let mut app = servers(&[1001]);
+        app.servers[0].fqdn = "web-01.example".into();
+        app.focus = Focus::Action(Action::CreateServer);
+        app.activate_focused();
+        let token = match app.drain_requests().as_slice() {
+            [Request::Catalog(token)] => *token,
+            other => panic!("expected a catalog request, got {other:?}"),
+        };
+        let mut choices = sample_choices();
+        choices.billing = Some(UsageBilling {
+            contract_type: "usage".into(),
+            id: "21".into(),
+        });
+        app.apply(Reply::Catalog {
+            token,
+            result: Ok(choices),
+        });
+        app.cancel_popup();
+        app.focus = Focus::Action(Action::DeleteServer);
+        app.activate_focused();
+        for ch in "web-01.example".chars() {
+            app.type_char(ch);
+        }
+        app.activate_focused();
+        assert!(app.nudge_choice(1));
+        assert!(app.nudge_choice(1));
+        app.activate_focused();
+        app.activate_focused();
+        match app.pending.as_slice() {
+            [
+                Request::Write {
+                    op:
+                        WriteOp::DeleteServer {
+                            mbpkgid,
+                            fqdn,
+                            cancel_type,
+                            contract_id,
+                            package,
+                            plan_id,
+                            pkg_id,
+                            host,
+                        },
+                    ..
+                },
+            ] => {
+                assert_eq!(*mbpkgid, 1001);
+                assert_eq!(fqdn, "web-01.example");
+                assert_eq!(cancel_type, super::CANCEL_END_OF_CYCLE);
+                assert_eq!(*contract_id, 21);
+                assert!(package.is_none());
+                assert!(plan_id.is_none());
+                assert!(pkg_id.is_none());
+                assert!(host.is_none());
+                assert_ne!(contract_id.to_string(), mbpkgid.to_string());
+            }
+            other => panic!("expected a server delete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn new_key_still_uses_the_file_field_and_delete_names_the_key() {
+        let mut app = App::new("vapi2.netactuate.com");
+        app.tab = Tab::SshKeys;
+        app.keys = vec![SshRow {
+            id: 9,
+            name: "laptop".into(),
+            fingerprint: "aa".into(),
+        }];
+        app.ssh_selected = Some(9);
+        app.focus = Focus::Action(Action::NewKey);
+        app.activate_focused();
+        app.type_char('k');
+        app.activate_focused();
+        let token = match app.drain_requests().as_slice() {
+            [
+                Request::SshCreate {
+                    token,
+                    file: Some(file),
+                },
+            ] => {
+                assert_eq!(file, "k");
+                *token
+            }
+            other => panic!("expected a new key, got {other:?}"),
+        };
+        app.apply(Reply::SshCreated {
+            token,
+            result: Ok("ID: 1, Name: k, Fingerprint: aa".into()),
+        });
+        app.drain_requests();
+
+        app.focus = Focus::Action(Action::DeleteKey);
+        app.activate_focused();
+        let prompt = app.prompt.as_ref().expect("confirm");
+        assert!(prompt.title.contains("laptop"), "{}", prompt.title);
+        assert!(prompt.hint.contains('9'), "{}", prompt.hint);
+        assert!(app.pending.is_empty());
+        app.activate_focused();
+        match app.pending.as_slice() {
+            [
+                Request::Write {
+                    op: WriteOp::DeleteKey { id, name },
+                    ..
+                },
+            ] => {
+                assert_eq!(*id, 9);
+                assert_eq!(name, "laptop");
+            }
+            other => panic!("expected a key delete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn delete_record_confirms_the_loaded_name() {
+        let mut app = App::new("vapi2.netactuate.com");
+        app.tab = Tab::Dns;
+        app.zones = vec![ZoneRow {
+            id: 4,
+            name: "example.com".into(),
+            zone_type: "NATIVE".into(),
+        }];
+        app.zone_selected = Some(4);
+        app.zone_records = vec![DnsRecord {
+            id: 12,
+            name: "www".into(),
+            record_type: "A".into(),
+            content: "192.0.2.1".into(),
+            ttl: Some(300),
+            prio: None,
+        }];
+        app.focus = Focus::Action(Action::DeleteRecord);
+        app.activate_focused();
+        app.type_char('1');
+        app.type_char('2');
+        app.activate_focused();
+        let prompt = app.prompt.as_ref().expect("confirm");
+        assert!(prompt.title.contains("www"), "{}", prompt.title);
+        assert!(prompt.hint.contains("12"), "{}", prompt.hint);
+        assert!(prompt.hint.contains("example.com"), "{}", prompt.hint);
+        assert!(app.pending.is_empty());
+        app.activate_focused();
+        match app.pending.as_slice() {
+            [
+                Request::Write {
+                    op: WriteOp::DeleteRecord { id, name, zone },
+                    ..
+                },
+            ] => {
+                assert_eq!(*id, 12);
+                assert_eq!(name, "www");
+                assert_eq!(zone, "example.com");
+            }
+            other => panic!("expected a record delete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_empty_server_form_is_not_sent_and_a_stale_write_is_dropped() {
+        let mut app = servers(&[1001]);
+        app.focus = Focus::Action(Action::CreateServer);
+        app.activate_focused();
+        let fields = app.prompt.as_ref().expect("form").fields.len();
+        app.drain_requests();
+        for _ in 0..fields {
+            app.activate_focused();
+        }
+        let hint = &app.prompt.as_ref().expect("form").hint;
+        assert!(hint.contains("still loading"), "{hint}");
+        assert!(
+            app.pending
+                .iter()
+                .all(|request| !matches!(request, Request::Write { .. }))
+        );
+        assert!(
+            app.status_lines()
+                .iter()
+                .any(|line| line.level == Level::Error
+                    && line.text.contains("still loading"))
+        );
+
+        let stale = app.issue(Slot::Write, 0);
+        let fresh = app.issue(Slot::Write, 0);
+        app.apply(Reply::Write {
+            token: stale,
+            result: Ok("stale write".into()),
+        });
+        assert!(
+            app.status_lines()
+                .iter()
+                .all(|line| !line.text.contains("stale write"))
+        );
+        app.apply(Reply::Write {
+            token: fresh,
+            result: Ok("server deleted: web-01.example".into()),
+        });
+        assert!(
+            app.status_lines()
+                .iter()
+                .any(|line| line.text == "server deleted: web-01.example")
+        );
+        assert!(matches!(app.pending.last(), Some(Request::Servers(_))));
+    }
+
+    #[test]
+    fn create_server_dropdowns_send_the_selected_ids() {
+        let mut app = servers(&[1001]);
+        app.focus = Focus::Action(Action::CreateServer);
+        app.activate_focused();
+        let token = match app.drain_requests().as_slice() {
+            [Request::Catalog(token)] => *token,
+            other => panic!("expected a catalog request, got {other:?}"),
+        };
+        let plan = app.prompt.as_ref().unwrap().fields[1].shown();
+        assert_eq!(plan, "loading");
+        app.apply(Reply::Catalog {
+            token,
+            result: Ok(BuildChoices {
+                plans: listed(vec![choice("VR1x2  ram 2048", "VR1x2")]),
+                locations: listed(vec![choice("Ashburn  IAD", "42")]),
+                images: listed(vec![choice("Ubuntu 24.04", "55")]),
+                keys: listed(vec![choice("laptop", "12")]),
+                billing: Some(UsageBilling {
+                    contract_type: "metered".into(),
+                    id: "7".into(),
+                }),
+                billing_error: None,
+            }),
+        });
+        app.type_char('w');
+        assert_eq!(app.prompt.as_ref().unwrap().fields[0].value, "w");
+        app.activate_focused();
+        assert!(app.nudge_choice(1));
+        assert_eq!(
+            app.prompt.as_ref().unwrap().fields[1].shown(),
+            "VR1x2  ram 2048"
+        );
+        assert_eq!(app.prompt.as_ref().unwrap().fields[1].value, "VR1x2");
+        app.type_char('1');
+        assert_eq!(app.prompt.as_ref().unwrap().fields[1].value, "VR1x2");
+        app.activate_focused();
+        app.nudge_choice(1);
+        app.activate_focused();
+        app.nudge_choice(1);
+        app.activate_focused();
+        app.nudge_choice(1);
+        assert_eq!(app.prompt.as_ref().unwrap().fields[4].shown(), "laptop");
+        assert_eq!(app.prompt.as_ref().unwrap().fields[4].value, "12");
+        app.activate_focused();
+        match app.pending.as_slice() {
+            [
+                Request::Write {
+                    op: WriteOp::CreateServer(fields),
+                    ..
+                },
+            ] => {
+                assert_eq!(fields.fqdn.as_deref(), Some("w"));
+                assert_eq!(fields.plan.as_deref(), Some("VR1x2"));
+                assert_eq!(fields.location, Some(42));
+                assert_eq!(fields.image, Some(55));
+                assert_eq!(fields.ssh_key_id, Some(12));
+                assert_eq!(fields.package_billing.as_deref(), Some("metered"));
+                assert_eq!(
+                    fields.package_billing_contract_id.as_deref(),
+                    Some("7")
+                );
+            }
+            other => panic!("expected a server create, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_missing_usage_contract_still_sends_the_other_buy_fields() {
+        let mut app = servers(&[1001]);
+        app.focus = Focus::Action(Action::CreateServer);
+        app.activate_focused();
+        let token = match app.drain_requests().as_slice() {
+            [Request::Catalog(token)] => *token,
+            other => panic!("expected a catalog request, got {other:?}"),
+        };
+        let mut choices = sample_choices();
+        choices.billing_error = Some("connection failed".into());
+        app.apply(Reply::Catalog {
+            token,
+            result: Ok(choices),
+        });
+        assert_eq!(app.prompt.as_ref().unwrap().fields[1].shown(), "choose");
+        assert!(app.status_lines().iter().any(|line| {
+            line.level == Level::Error
+                && line.text.contains("usage contract: connection failed")
+        }));
+        submit_filled_create(&mut app);
+        match app.pending.as_slice() {
+            [
+                Request::Write {
+                    op: WriteOp::CreateServer(fields),
+                    ..
+                },
+            ] => {
+                assert_eq!(fields.fqdn.as_deref(), Some("w"));
+                assert_eq!(fields.plan.as_deref(), Some("VR1x2"));
+                assert_eq!(fields.location, Some(42));
+                assert_eq!(fields.image, Some(55));
+                assert_eq!(fields.ssh_key_id, Some(12));
+                assert!(fields.package_billing.is_none());
+                assert!(fields.package_billing_contract_id.is_none());
+                let dumped = format!("{fields:?}");
+                assert!(!dumped.contains("ssh-ed25519"));
+                assert!(!dumped.contains("PRIVATE"));
+            }
+            other => panic!("expected a server create, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_ambiguous_usage_contract_is_named_and_still_sent() {
+        let mut app = servers(&[1001]);
+        app.focus = Focus::Action(Action::CreateServer);
+        app.activate_focused();
+        let token = match app.drain_requests().as_slice() {
+            [Request::Catalog(token)] => *token,
+            other => panic!("expected a catalog request, got {other:?}"),
+        };
+        let mut choices = sample_choices();
+        choices.billing = Some(UsageBilling {
+            contract_type: "hourly".into(),
+            id: "21".into(),
+        });
+        choices.billing_error =
+            Some("several contracts have is_free 1; using the first".into());
+        app.apply(Reply::Catalog {
+            token,
+            result: Ok(choices),
+        });
+        assert!(
+            app.status_lines()
+                .iter()
+                .any(|line| { line.text.contains("using the first") })
+        );
+        submit_filled_create(&mut app);
+        match app.pending.as_slice() {
+            [
+                Request::Write {
+                    op: WriteOp::CreateServer(fields),
+                    ..
+                },
+            ] => {
+                assert_eq!(fields.package_billing.as_deref(), Some("hourly"));
+                assert_eq!(
+                    fields.package_billing_contract_id.as_deref(),
+                    Some("21")
+                );
+                assert_eq!(fields.ssh_key_id, Some(12));
+                assert!(fields.plan.is_some());
+                assert!(fields.location.is_some());
+                assert!(fields.image.is_some());
+                assert!(fields.fqdn.is_some());
+            }
+            other => panic!("expected a server create, got {other:?}"),
+        }
+    }
+
+    fn submit_filled_create(app: &mut App) {
+        app.type_char('w');
+        app.activate_focused();
+        assert!(app.nudge_choice(1));
+        app.activate_focused();
+        assert!(app.nudge_choice(1));
+        app.activate_focused();
+        assert!(app.nudge_choice(1));
+        app.activate_focused();
+        assert!(app.nudge_choice(1));
+        app.activate_focused();
+    }
+
+    #[test]
+    fn a_partial_create_is_not_sent() {
+        let mut app = servers(&[1001]);
+        app.focus = Focus::Action(Action::CreateServer);
+        app.activate_focused();
+        let token = match app.drain_requests().as_slice() {
+            [Request::Catalog(token)] => *token,
+            other => panic!("expected a catalog request, got {other:?}"),
+        };
+        app.type_char('w');
+        submit_form(&mut app);
+        assert_create_held(&app, "still loading");
+
+        app.apply(Reply::Catalog {
+            token,
+            result: Err("catalog down".into()),
+        });
+        submit_form(&mut app);
+        assert_create_held(&app, "unavailable");
+
+        app.cancel_popup();
+        app.focus = Focus::Action(Action::CreateServer);
+        app.activate_focused();
+        let token = match app.drain_requests().as_slice() {
+            [Request::Catalog(token)] => *token,
+            other => panic!("expected a catalog request, got {other:?}"),
+        };
+        let mut choices = sample_choices();
+        choices.billing = Some(UsageBilling {
+            contract_type: "metered".into(),
+            id: "7".into(),
+        });
+        app.apply(Reply::Catalog {
+            token,
+            result: Ok(choices),
+        });
+        app.type_char('w');
+        submit_form(&mut app);
+        let hint = app.prompt.as_ref().expect("form").hint.clone();
+        assert!(hint.contains("required"), "{hint}");
+        assert!(hint.contains("plan"), "{hint}");
+        assert!(hint.contains("ssh key"), "{hint}");
+        assert_create_held(&app, "required");
+
+        pick_choice(&mut app, 1);
+        pick_choice(&mut app, 2);
+        pick_choice(&mut app, 3);
+        submit_form(&mut app);
+        let hint = app.prompt.as_ref().expect("form").hint.clone();
+        assert_eq!(hint, "ssh key is required");
+        assert_create_held(&app, "ssh key is required");
+
+        app.cancel_popup();
+        app.focus = Focus::Action(Action::CreateServer);
+        app.activate_focused();
+        let token = match app.drain_requests().as_slice() {
+            [Request::Catalog(token)] => *token,
+            other => panic!("expected a catalog request, got {other:?}"),
+        };
+        let mut choices = sample_choices();
+        choices.keys = Listed {
+            options: Vec::new(),
+            error: Some("keys down".into()),
+        };
+        app.apply(Reply::Catalog {
+            token,
+            result: Ok(choices),
+        });
+        app.type_char('w');
+        pick_choice(&mut app, 1);
+        pick_choice(&mut app, 2);
+        pick_choice(&mut app, 3);
+        submit_form(&mut app);
+        let hint = app.prompt.as_ref().expect("form").hint.clone();
+        assert_eq!(hint, "ssh key is unavailable");
+        assert_create_held(&app, "ssh key is unavailable");
+    }
+
+    fn submit_form(app: &mut App) {
+        app.activate_target(crate::focus::Target::Prompt(PromptFocus::Submit));
+    }
+
+    fn pick_choice(app: &mut App, index: usize) {
+        app.activate_target(crate::focus::Target::Prompt(PromptFocus::Field(
+            index,
+        )));
+        assert!(app.nudge_choice(1));
+    }
+
+    fn assert_create_held(app: &App, needle: &str) {
+        let hint = &app.prompt.as_ref().expect("form stays open").hint;
+        assert!(hint.contains(needle), "{hint}");
+        assert!(
+            app.pending
+                .iter()
+                .all(|request| !matches!(request, Request::Write { .. }))
+        );
+    }
+
+    fn sample_choices() -> BuildChoices {
+        BuildChoices {
+            plans: listed(vec![choice("VR1x2  ram 2048", "VR1x2")]),
+            locations: listed(vec![choice("Ashburn  IAD", "42")]),
+            images: listed(vec![choice("Ubuntu 24.04", "55")]),
+            keys: listed(vec![choice("laptop", "12")]),
+            billing: None,
+            billing_error: None,
+        }
+    }
+
+    fn choice(label: &str, value: &str) -> Choice {
+        Choice {
+            label: label.to_string(),
+            value: value.to_string(),
+        }
+    }
+
+    fn listed(options: Vec<Choice>) -> Listed {
+        Listed {
+            options,
+            error: None,
+        }
     }
 }
