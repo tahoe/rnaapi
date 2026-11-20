@@ -2214,50 +2214,93 @@ mod tests {
     }
 
     #[test]
-    fn vim_movement_stays_on_the_tab_row_then_the_panes() {
+    fn vim_keys_activate_the_selection_they_move_to() {
         let mut app = sample();
         app.focus = Focus::Tab(Tab::Servers);
         let mut screen = Screen::default();
         let _ = draw(&mut app, &mut screen);
-
         app.move_aim(&screen, Aim::Right);
+        assert_eq!(app.tab, Tab::SshKeys);
         assert_eq!(app.focus, Focus::Tab(Tab::SshKeys));
         app.move_aim(&screen, Aim::Left);
-        assert_eq!(app.focus, Focus::Tab(Tab::Servers));
+        assert_eq!(app.tab, Tab::Servers);
         app.move_aim(&screen, Aim::Left);
-        assert_eq!(app.focus, Focus::Tab(Tab::Servers));
+        assert_eq!(app.tab, Tab::Servers);
 
         app.move_aim(&screen, Aim::Down);
-        assert_eq!(app.focus, Focus::Action(Action::CreateServer));
-        app.move_aim(&screen, Aim::Up);
-        assert_eq!(app.focus, Focus::Tab(Tab::Servers));
+        assert!(app.prompt.is_some(), "j onto Create server opens it");
 
-        app.move_aim(&screen, Aim::Down);
-        app.move_aim(&screen, Aim::Right);
-        assert_eq!(app.focus, Focus::Detail(DetailControl::On));
-        app.move_aim(&screen, Aim::Left);
-        assert_eq!(app.focus, Focus::Action(Action::CreateServer));
-
+        let mut app = sample();
+        app.set_servers(
+            vec![
+                ServerRow::listed(
+                    1001,
+                    "web-01.example",
+                    "running",
+                    ServerKind::Virtual,
+                ),
+                ServerRow::listed(
+                    1002,
+                    "web-02.example",
+                    "stopped",
+                    ServerKind::Virtual,
+                ),
+            ],
+            1002,
+        );
+        app.focus = Focus::Action(Action::CreateServer);
+        let mut screen = Screen::default();
+        let _ = draw(&mut app, &mut screen);
         app.move_aim(&screen, Aim::Down);
         assert_eq!(app.focus, Focus::Row(0));
-        app.move_aim(&screen, Aim::Up);
-        assert_eq!(app.focus, Focus::Action(Action::CreateServer));
+        assert_eq!(app.selected_index(), Some(0));
 
+        let mut app = sample();
+        app.focus = Focus::Action(Action::CreateServer);
+        let mut screen = Screen::default();
+        let _ = draw(&mut app, &mut screen);
         app.move_aim(&screen, Aim::Right);
+        assert_eq!(
+            app.power.as_ref().map(|popup| popup.verb),
+            Some(PowerVerb::On)
+        );
+
+        let mut app = sample();
+        app.focus = Focus::Detail(DetailControl::On);
+        let mut screen = Screen::default();
+        let _ = draw(&mut app, &mut screen);
         app.move_aim(&screen, Aim::Right);
-        assert_eq!(app.focus, Focus::Detail(DetailControl::Off));
+        assert_eq!(
+            app.power.as_ref().map(|popup| popup.verb),
+            Some(PowerVerb::Off)
+        );
+
+        let mut app = sample();
+        app.focus = Focus::Detail(DetailControl::On);
+        let mut screen = Screen::default();
+        let _ = draw(&mut app, &mut screen);
         app.move_aim(&screen, Aim::Left);
-        assert_eq!(app.focus, Focus::Detail(DetailControl::On));
+        assert!(app.prompt.is_some(), "h from On opens Create server");
+
+        let mut app = sample();
+        app.focus = Focus::Detail(DetailControl::On);
+        let mut screen = Screen::default();
+        let _ = draw(&mut app, &mut screen);
         app.move_aim(&screen, Aim::Down);
         assert_eq!(app.focus, Focus::ServerPane(ServerPane::Jobs));
+        assert_eq!(app.server_pane, ServerPane::Jobs);
         app.move_aim(&screen, Aim::Right);
-        assert_eq!(app.focus, Focus::ServerPane(ServerPane::Address));
+        assert_eq!(app.server_pane, ServerPane::Address);
         app.move_aim(&screen, Aim::Left);
-        assert_eq!(app.focus, Focus::ServerPane(ServerPane::Jobs));
-        app.move_aim(&screen, Aim::Up);
-        assert_eq!(app.focus, Focus::Detail(DetailControl::On));
+        assert_eq!(app.server_pane, ServerPane::Jobs);
+
+        let mut app = sample();
+        app.focus = Focus::Detail(DetailControl::On);
+        let mut screen = Screen::default();
+        let _ = draw(&mut app, &mut screen);
         app.move_aim(&screen, Aim::Up);
         assert_eq!(app.focus, Focus::Tab(Tab::Servers));
+        assert_eq!(app.tab, Tab::Servers);
     }
 
     fn hit(screen: &Screen, target: Target) -> ratatui::layout::Rect {

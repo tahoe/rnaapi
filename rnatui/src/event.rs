@@ -77,10 +77,18 @@ fn on_key(app: &mut App, screen: &mut Screen, key: KeyEvent) -> Action {
         }
         KeyCode::Enter if !repeat => app.activate_focused(),
         KeyCode::Backspace if app.typing() => app.backspace(),
-        KeyCode::Char('h') if !app.typing() => app.move_aim(screen, Aim::Left),
-        KeyCode::Char('j') if !app.typing() => app.move_aim(screen, Aim::Down),
-        KeyCode::Char('k') if !app.typing() => app.move_aim(screen, Aim::Up),
-        KeyCode::Char('l') if !app.typing() => app.move_aim(screen, Aim::Right),
+        KeyCode::Char('h') if !app.typing() && !repeat => {
+            app.move_aim(screen, Aim::Left)
+        }
+        KeyCode::Char('j') if !app.typing() && !repeat => {
+            app.move_aim(screen, Aim::Down)
+        }
+        KeyCode::Char('k') if !app.typing() && !repeat => {
+            app.move_aim(screen, Aim::Up)
+        }
+        KeyCode::Char('l') if !app.typing() && !repeat => {
+            app.move_aim(screen, Aim::Right)
+        }
         KeyCode::Char(ch) if app.typing() => app.type_char(ch),
         KeyCode::Char(' ') if !repeat => app.activate_focused(),
         _ => {}

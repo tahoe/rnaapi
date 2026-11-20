@@ -917,8 +917,9 @@ impl App {
         self.focus = step(&items, self.focus, backward);
     }
 
-    /// Move the outline. On the page, tabs are one row and the two panes are
-    /// the next. A popup still moves by the painted hit boxes.
+    /// Move the outline and fire it. `h`, `j`, `k`, and `l` do what Enter does
+    /// on the control they land on: open the tab, select the row, or press
+    /// the button. A popup still moves by the painted hit boxes.
     pub fn move_aim(&mut self, screen: &Screen, aim: Aim) {
         let Some(current) = self.aim_target() else {
             return;
@@ -928,9 +929,14 @@ impl App {
         } else {
             neighbor(screen, current, aim, self.modal())
         };
-        if let Some(next) = next {
-            self.place_aim(next);
+        let Some(next) = next else {
+            return;
+        };
+        if self.aim_target() == Some(next) {
+            return;
         }
+        self.place_aim(next);
+        self.activate_focused();
     }
 
     fn aim_target(&self) -> Option<Target> {
