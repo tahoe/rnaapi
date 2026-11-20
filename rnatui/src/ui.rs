@@ -301,7 +301,7 @@ fn paint_split_frame(
     if area.width < 3 || area.height < 2 || list_width == 0 {
         return;
     }
-    let line = ratatui::symbols::line::NORMAL;
+    let line = ratatui::symbols::line::ROUNDED;
     let page = page_focused(app);
     // A row outlines the list. An empty list does too, while its open tab
     // is the outline, so the pane is green before the first row arrives.
@@ -1408,7 +1408,7 @@ fn paint_tab_shelf(frame: &mut Frame<'_>, area: Rect) {
     }
     let y = area.y.saturating_add(2);
     let style = theme::quiet_edge();
-    let horizontal = ratatui::symbols::line::NORMAL.horizontal;
+    let horizontal = ratatui::symbols::line::ROUNDED.horizontal;
     for x in area.x..area.right() {
         paint_cell(frame, x, y, horizontal, style);
     }
@@ -1423,7 +1423,7 @@ fn paint_tab(
         return;
     }
     let (bg, fg, border) = tab_colors(open, focused);
-    let line = ratatui::symbols::line::NORMAL;
+    let line = ratatui::symbols::line::ROUNDED;
     let edge = Style::default().fg(border).bg(bg);
     let text = if focused {
         Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD)
@@ -1966,7 +1966,7 @@ mod tests {
         assert_eq!(screen.columns_split.width, 1);
         assert!(screen.columns_split.height >= 1);
         assert_eq!(screen.rows_split.height, 1);
-        assert_eq!(buffer.cell((0, top)).unwrap().symbol(), "┌");
+        assert_eq!(buffer.cell((0, top)).unwrap().symbol(), "╭");
         assert_eq!(buffer.cell((split_x, top)).unwrap().symbol(), "┬");
         assert_eq!(
             buffer
@@ -1975,7 +1975,7 @@ mod tests {
                 .symbol(),
             "│"
         );
-        assert_eq!(buffer.cell((0, bottom)).unwrap().symbol(), "└");
+        assert_eq!(buffer.cell((0, bottom)).unwrap().symbol(), "╰");
         assert_eq!(buffer.cell((split_x, bottom)).unwrap().symbol(), "┴");
         assert_eq!(buffer.cell((1, bottom)).unwrap().symbol(), "─");
         assert!(screen.list_width >= 20);
