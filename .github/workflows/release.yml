@@ -1,0 +1,60 @@
+name: release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build packages
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Build release binaries
+        run: cargo build --release -p rnacli -p rnatui
+
+      - name: Package binaries and deb
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -eu
+          triple=$(rustc -vV | awk '/^host:/ { print $2 }')
+          version=${TAG#v}
+          arch=$(dpkg --print-architecture)
+          stage="${RUNNER_TEMP}/deb"
+          out="${RUNNER_TEMP}/assets"
+          mkdir -p "${stage}/DEBIAN" "${stage}/usr/bin" "${out}"
+          install -m 0755 target/release/rnacli "${stage}/usr/bin/rnacli"
+          install -m 0755 target/release/rnatui "${stage}/usr/bin/rnatui"
+          {
+            echo "Package: rnaapi"
+            echo "Version: ${version}"
+            echo "Section: utils"
+            echo "Priority: optional"
+            echo "Architecture: ${arch}"
+            echo "Depends: libc6, libssl3, zlib1g, libzstd1"
+            echo "Maintainer: Dennis Durling <djdtahoe@gmail.com>"
+            echo "Description: NetActuate API client library and cli program"
+            echo " rnacli is the CLI. rnatui is the terminal UI. Both are installed"
+            echo " under /usr/bin."
+          } > "${stage}/DEBIAN/control"
+          dpkg-deb --root-owner-group --build "${stage}" "${out}/rnaapi_${version}_${arch}.deb"
+          install -m 0755 target/release/rnacli "${out}/rnacli-${triple}"
+          install -m 0755 target/release/rnatui "${out}/rnatui-${triple}"
+          echo "ASSET_DIR=${out}" >> "${GITHUB_ENV}"
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "${TAG}" "${ASSET_DIR}"/* --repo "${GITHUB_REPOSITORY}"
