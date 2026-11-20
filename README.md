@@ -36,7 +36,7 @@ Other commands: `dedicated on`, `dedicated off`, `dedicated reboot`, `dns get`, 
 
 Terminal UI for the same API. Tabs are Servers, SSH keys, Locations, DNS, and Account. On Servers the actions are Create server, On, Off, Reboot, Rebuild, Terminate, and Cancel. The selected server also has Jobs, Address, and Bandwidth.
 
-![Servers tab](<pics/Screenshot From 2026-11-20 14-08-42.png>)
+![Servers tab](pics/servers.png)
 
 ## Install
 
