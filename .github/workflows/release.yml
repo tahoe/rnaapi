@@ -9,7 +9,25 @@ permissions:
   contents: write
 
 jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the release if needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          if ! gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release create "${TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${TAG}" \
+              --verify-tag \
+              --notes "Linux rnacli, rnatui, and the rnaapi deb. macOS rnacli and rnatui for x86_64 and aarch64."
+          fi
+
   linux:
+    needs: release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -60,13 +78,49 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -eu
-          if ! gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            gh release create "${TAG}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "${TAG}" \
-              --verify-tag \
-              --notes "Linux rnacli, rnatui, and the rnaapi deb."
-          fi
+          gh release upload "${TAG}" "${ASSET_DIR}"/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
+
+  macos:
+    needs: release
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binaries
+        run: cargo build --release --target ${{ matrix.target }} -p rnacli -p rnatui
+
+      - name: Name the assets
+        run: |
+          set -eu
+          target="${{ matrix.target }}"
+          out="${RUNNER_TEMP}/assets"
+          mkdir -p "${out}"
+          install -m 0755 "target/${target}/release/rnacli" "${out}/rnacli-${target}"
+          install -m 0755 "target/${target}/release/rnatui" "${out}/rnatui-${target}"
+          echo "ASSET_DIR=${out}" >> "${GITHUB_ENV}"
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
           gh release upload "${TAG}" "${ASSET_DIR}"/* \
             --repo "${GITHUB_REPOSITORY}" \
             --clobber
