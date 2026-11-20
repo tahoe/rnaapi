@@ -4,6 +4,8 @@ version.workspace = true
 license.workspace = true
 edition.workspace = true
 description.workspace = true
+repository.workspace = true
+readme = "README.md"
 
 [dependencies]
 rnaapi_derive = { path = "../rnaapi_derive", version = "2.1.1" }

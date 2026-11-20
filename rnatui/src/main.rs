@@ -1,7 +1,19 @@
 // Copyright (C) 2026 Dennis Durling
 // This file is part of RNAAPI Rust API Client Library, licensed
 // under the GNU General Public License v3.0
-//! Terminal UI for the NetActuate API.
+//! Terminal UI for the NetActuate API, built on the `rnaapi` crate.
+//!
+//! `API_KEY` is required. `API_ADDRESS` is optional and defaults to
+//! `https://vapi2.netactuate.com/api/`.
+//!
+//! Tabs are Servers, SSH keys, Locations, DNS, and Account. On Servers the
+//! actions are Create server, On, Off, Reboot, Rebuild, Terminate, and Cancel.
+//! The selected server also has Jobs, Address, and Bandwidth.
+//!
+//! The same server operations are on `rnacli`: `get`, `terminate`, `cancel`,
+//! `build`, `rebuild`, `on`, and `off`. From the workspace root,
+//! `cargo build --release` writes `rnatui` and `rnacli` under `target/release/`.
+//! Copy those binaries onto `PATH`.
 
 use std::io::{self, Stdout};
 use std::process::ExitCode;

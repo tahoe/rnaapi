@@ -1,16 +1,34 @@
 //! CLI for the NetActuate API, built on the `rnaapi` crate.
 //!
-//! ```bash
-//! export API_KEY='<your api key>'
-//! # optional; defaults to https://vapi2.netactuate.com/api/
-//! export API_ADDRESS='https://vapi2.netactuate.com/api/'
-//! ```
+//! Commands are `rnacli <endpoint> <action>`. `API_KEY` is required.
+//! `API_ADDRESS` is optional and defaults to `https://vapi2.netactuate.com/api/`.
+//!
+//! `server` subcommands:
+//!
+//! - `get` lists servers, or one server when `-m` is set.
+//! - `terminate` terminates a server. `POST cloud/server/delete/{mbpkgid}` with `{}`.
+//! - `cancel` cancels a package. `POST cloud/package/cancel`.
+//!   `--cancel-type` is `Immediate` or `End of Billing Period`, and `--agree` is required.
+//! - `build` builds a server. `POST cloud/server/buy_build`.
+//! - `rebuild` rebuilds a server. `POST cloud/server/build/{mbpkgid}`.
+//! - `on` starts a cloud server. `POST cloud/server/{mbpkgid}/start`. Alias `start`.
+//! - `off` shuts a cloud server down. `POST cloud/server/{mbpkgid}/shutdown`. Alias `shutdown`.
+//! - `reboot` reboots a cloud server. `POST cloud/server/{mbpkgid}/reboot`.
+//!
+//! Other commands: `dedicated` (`on`, `off`, `reboot`), `dns get`, `ssh get`,
+//! `ssh new`, `job get`, `ip get`, `bandwidth get`, `invoice get`, `sizes get`,
+//! `location get`, `image get`, `account get`, `pubkey get`, and
+//! `generate-completions`.
+//!
+//! `rnatui` is the terminal UI in this workspace. From the workspace root,
+//! `cargo build --release` writes both binaries under `target/release/`. Copy
+//! `rnacli` and `rnatui` onto `PATH`.
 //!
 //! ```text
 //! rnacli server get
 //! rnacli server get -m <mbpkgid>
+//! rnacli server on -m <mbpkgid>
 //! rnacli server off -m <mbpkgid>
-//! rnacli dedicated off -m <mbpkgid>
 //! rnacli server terminate -m <mbpkgid>
 //! rnacli server cancel -m <mbpkgid> --cancel-type Immediate --agree
 //! rnacli server build --fqdn <name> --plan <plan> --location <id> --image <id>
