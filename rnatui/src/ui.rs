@@ -1166,7 +1166,16 @@ fn render_prompt(
         }
         y = y.saturating_add(1);
     }
+    let dismiss = if matches!(
+        popup.kind,
+        crate::model::PromptKind::CancelServer { .. }
+    ) {
+        "Back"
+    } else {
+        "Cancel"
+    };
     let submit_width = button_width(&popup.submit_label).max(10);
+    let dismiss_width = button_width(dismiss).max(10);
     paint_popup_button(
         frame,
         screen,
@@ -1186,8 +1195,8 @@ fn render_prompt(
         inner,
         button_y,
         PopupButton {
-            label: "Cancel",
-            width: 10,
+            label: dismiss,
+            width: dismiss_width,
             primary: false,
             focused: popup.focus == PromptFocus::Cancel,
             target: Target::Prompt(PromptFocus::Cancel),

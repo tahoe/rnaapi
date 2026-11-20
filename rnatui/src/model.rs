@@ -1128,7 +1128,8 @@ impl App {
         }
     }
 
-    /// Move the open dropdown. `false` means this key is not on a dropdown.
+    /// Cycle the highlighted dropdown. `h` and Left move backward. `l` and
+    /// Right move forward. `false` means the highlight is not on a dropdown.
     pub fn nudge_choice(&mut self, delta: i32) -> bool {
         let Some(field) = self.focused_field_mut() else {
             return false;
@@ -1439,7 +1440,7 @@ impl App {
                     format!("Cancel {}", server.fqdn),
                     format!("mbpkgid {}", server.mbpkgid),
                     cancel_form_fields(),
-                    "Cancel",
+                    "Cancel package",
                     PromptKind::CancelServer {
                         mbpkgid: server.mbpkgid,
                         fqdn: server.fqdn,
@@ -3764,7 +3765,7 @@ mod tests {
         app.activate_focused();
         let prompt = app.prompt.as_ref().expect("hostname");
         assert!(prompt.title.starts_with("Cancel "), "{}", prompt.title);
-        assert_eq!(prompt.submit_label, "Cancel");
+        assert_eq!(prompt.submit_label, "Cancel package");
         assert!(prompt.fields.iter().any(|field| field.label == "cancel_type"));
         assert!(prompt.fields.iter().any(|field| {
             field.label == "agree" && field.shown().contains("destroyed")

@@ -75,10 +75,18 @@ fn on_key(app: &mut App, screen: &mut Screen, key: KeyEvent) -> Action {
                 app.move_list(1);
             }
         }
+        KeyCode::Left => {
+            let _ = app.nudge_choice(-1);
+        }
+        KeyCode::Right => {
+            let _ = app.nudge_choice(1);
+        }
         KeyCode::Enter if !repeat => app.activate_focused(),
         KeyCode::Backspace if app.typing() => app.backspace(),
         KeyCode::Char('h') if !app.typing() && !repeat => {
-            app.move_aim(screen, Aim::Left)
+            if !app.nudge_choice(-1) {
+                app.move_aim(screen, Aim::Left);
+            }
         }
         KeyCode::Char('j') if !app.typing() && !repeat => {
             app.move_aim(screen, Aim::Down)
@@ -87,7 +95,9 @@ fn on_key(app: &mut App, screen: &mut Screen, key: KeyEvent) -> Action {
             app.move_aim(screen, Aim::Up)
         }
         KeyCode::Char('l') if !app.typing() && !repeat => {
-            app.move_aim(screen, Aim::Right)
+            if !app.nudge_choice(1) {
+                app.move_aim(screen, Aim::Right);
+            }
         }
         KeyCode::Char(ch) if app.typing() => app.type_char(ch),
         KeyCode::Char(' ') if !repeat => app.activate_focused(),
@@ -294,6 +304,33 @@ mod tests {
         );
         assert!(screen.log_rows > log);
         assert!(screen.log_rows >= 3);
+    }
+
+    #[test]
+    fn h_l_and_arrows_cycle_a_highlighted_dropdown() {
+        let mut app = App::new("vapi2.netactuate.com");
+        app.set_servers(
+            vec![ServerRow::listed(
+                1001,
+                "web-01.example",
+                "running",
+                ServerKind::Virtual,
+            )],
+            1001,
+        );
+        app.focus = Focus::Action(crate::focus::Action::CancelServer);
+        let mut screen = Screen::default();
+        on_event(&mut app, &mut screen, key(KeyCode::Enter));
+        on_event(&mut app, &mut screen, key(KeyCode::Enter));
+        let value = |app: &App| app.prompt.as_ref().unwrap().fields[1].value.clone();
+        on_event(&mut app, &mut screen, key(KeyCode::Char('l')));
+        assert_eq!(value(&app), "Immediate");
+        on_event(&mut app, &mut screen, key(KeyCode::Right));
+        assert_eq!(value(&app), "End of Billing Period");
+        on_event(&mut app, &mut screen, key(KeyCode::Char('h')));
+        assert_eq!(value(&app), "Immediate");
+        on_event(&mut app, &mut screen, key(KeyCode::Left));
+        assert_eq!(value(&app), "End of Billing Period");
     }
 
     fn mouse(kind: MouseEventKind, column: u16, row: u16) -> Event {
