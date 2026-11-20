@@ -1581,7 +1581,7 @@ dependencies = [
 
 [[package]]
 name = "rnaapi"
-version = "2.1.2"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "dotenvy",
@@ -1598,7 +1598,7 @@ dependencies = [
 
 [[package]]
 name = "rnaapi_derive"
-version = "2.1.2"
+version = "2.2.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1607,7 +1607,7 @@ dependencies = [
 
 [[package]]
 name = "rnacli"
-version = "2.1.2"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1620,7 +1620,7 @@ dependencies = [
 
 [[package]]
 name = "rnatui"
-version = "2.1.2"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "crossterm",
