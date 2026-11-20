@@ -9,7 +9,7 @@ readme = "README.md"
 
 [dependencies]
 clap = { version = "4.5.51", features = ["derive"] }
-rnaapi = { path = "../rnaapi_lib", version = "2.2.0" }
+rnaapi = { path = "../rnaapi_lib", version = "2.2.1" }
 tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
 anyhow = "1.0.100"
 clap_complete = "4.5"

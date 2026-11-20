@@ -941,6 +941,41 @@ impl App {
         }
     }
 
+    /// Repeat `move_aim` until that direction has nowhere left to go.
+    /// Intermediate stops are not activated. The landing spot follows the
+    /// same rule as one step: tabs, rows, and panes open, and write buttons
+    /// stay outlined.
+    pub fn jump_aim(&mut self, screen: &Screen, aim: Aim) {
+        let Some(start) = self.aim_target() else {
+            return;
+        };
+        let mut current = start;
+        for _ in 0..512 {
+            let next = if self.modal() == crate::focus::Modal::None {
+                page_neighbor(
+                    screen,
+                    current,
+                    aim,
+                    self.tab,
+                    self.selected_index(),
+                )
+            } else {
+                neighbor(screen, current, aim, self.modal())
+            };
+            match next {
+                Some(next) if next != current => current = next,
+                _ => break,
+            }
+        }
+        if self.aim_target() == Some(current) {
+            return;
+        }
+        self.place_aim(current);
+        if Self::aim_changes_display(current) {
+            self.activate_focused();
+        }
+    }
+
     fn aim_target(&self) -> Option<Target> {
         match self.modal() {
             crate::focus::Modal::None => match self.focus {

@@ -47,6 +47,13 @@ fn on_key(app: &mut App, screen: &mut Screen, key: KeyEvent) -> Action {
         }
         _ => {}
     }
+    let repeat = key.kind == KeyEventKind::Repeat;
+    if ctrl && !app.typing() && !repeat
+        && let Some(aim) = vim_aim(key.code)
+    {
+        app.jump_aim(screen, aim);
+        return Action::Continue;
+    }
     if ctrl || key.modifiers.contains(KeyModifiers::ALT) {
         return Action::Continue;
     }
@@ -58,7 +65,6 @@ fn on_key(app: &mut App, screen: &mut Screen, key: KeyEvent) -> Action {
         screen.nudge(split, delta);
         return Action::Continue;
     }
-    let repeat = key.kind == KeyEventKind::Repeat;
     match key.code {
         KeyCode::BackTab => app.focus_move(true),
         KeyCode::Tab if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -104,6 +110,16 @@ fn on_key(app: &mut App, screen: &mut Screen, key: KeyEvent) -> Action {
         _ => {}
     }
     Action::Continue
+}
+
+fn vim_aim(code: KeyCode) -> Option<Aim> {
+    match code {
+        KeyCode::Char('h') => Some(Aim::Left),
+        KeyCode::Char('j') => Some(Aim::Down),
+        KeyCode::Char('k') => Some(Aim::Up),
+        KeyCode::Char('l') => Some(Aim::Right),
+        _ => None,
+    }
 }
 
 /// Left and `-` shrink the list or the log. Right, `=`, and `+` grow it.
@@ -175,6 +191,18 @@ mod tests {
 
     fn key(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn ctrl(ch: char) -> Event {
+        Event::Key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::CONTROL))
+    }
+
+    fn draw(app: &mut App, screen: &mut Screen) {
+        let backend = ratatui::backend::TestBackend::new(100, 32);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| crate::ui::render(frame, app, screen))
+            .unwrap();
     }
 
     #[test]
@@ -331,6 +359,31 @@ mod tests {
         assert_eq!(value(&app), "Immediate");
         on_event(&mut app, &mut screen, key(KeyCode::Left));
         assert_eq!(value(&app), "End of Billing Period");
+    }
+
+    #[test]
+    fn ctrl_k_from_the_bottom_of_the_server_list_reaches_the_tabs() {
+        let mut app = App::new("vapi2.netactuate.com");
+        let rows: Vec<ServerRow> = (1..=8)
+            .map(|id| {
+                let fqdn = format!("host-{id}.example");
+                ServerRow::listed(id, &fqdn, "running", ServerKind::Virtual)
+            })
+            .collect();
+        app.set_servers(rows, 8);
+        app.focus = Focus::Row(7);
+        let mut screen = Screen::default();
+        draw(&mut app, &mut screen);
+        on_event(&mut app, &mut screen, key(KeyCode::Char('k')));
+        assert_eq!(app.focus, Focus::Row(6));
+        app.focus = Focus::Row(7);
+        draw(&mut app, &mut screen);
+        on_event(&mut app, &mut screen, ctrl('k'));
+        assert_eq!(app.focus, Focus::Tab(Tab::Servers));
+        assert!(app.prompt.is_none());
+        on_event(&mut app, &mut screen, ctrl('j'));
+        assert!(matches!(app.focus, Focus::Row(_)));
+        assert!(app.prompt.is_none());
     }
 
     fn mouse(kind: MouseEventKind, column: u16, row: u16) -> Event {
