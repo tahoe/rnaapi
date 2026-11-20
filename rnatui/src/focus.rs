@@ -646,11 +646,13 @@ pub enum Aim {
 /// the left pane. `l` from the left pane enters the right pane's buttons, and
 /// `l` then walks those buttons left to right. `h` on the leftmost of them
 /// returns to the left pane. `j` from a right-pane button drops to the tab
-/// row under it, where `h` and `l` move again. `k` from the top of a pane
-/// returns to the open main tab. Inside the left pane, `j` and `k` walk that
-/// pane's buttons and list.
+/// row under it. `l` walks that row right, and `h` walks it left. Only the
+/// leftmost of those tabs returns `h` to the selected list row. `k` from the
+/// top of a pane returns to the open main tab. Inside the left pane, `j` and
+/// `k` walk that pane's buttons and list.
 pub fn page_neighbor(
     screen: &Screen, current: Target, aim: Aim, open_tab: Tab,
+    selected: Option<usize>,
 ) -> Option<Target> {
     let here = band(current, open_tab)?;
     match (here, aim) {
@@ -675,8 +677,17 @@ pub fn page_neighbor(
         }
         (Band::Right, Aim::Down) => first_in(screen, Band::Subtabs, open_tab),
         (Band::Right, Aim::Up) => Some(Target::Tab(open_tab)),
-        (Band::Subtabs, Aim::Left | Aim::Right) => {
-            step_inside(screen, current, Band::Subtabs, open_tab, aim == Aim::Right)
+        (Band::Subtabs, Aim::Right) => {
+            step_inside(screen, current, Band::Subtabs, open_tab, true)
+        }
+        (Band::Subtabs, Aim::Left) => {
+            step_inside(screen, current, Band::Subtabs, open_tab, false).or_else(
+                || {
+                    selected
+                        .map(Target::Row)
+                        .or_else(|| first_in(screen, Band::Left, open_tab))
+                },
+            )
         }
         (Band::Subtabs, Aim::Up) => first_in(screen, Band::Right, open_tab)
             .or(Some(Target::Tab(open_tab))),

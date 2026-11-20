@@ -2228,7 +2228,8 @@ mod tests {
         assert_eq!(app.tab, Tab::Servers);
 
         app.move_aim(&screen, Aim::Down);
-        assert!(app.prompt.is_some(), "j onto Create server opens it");
+        assert_eq!(app.focus, Focus::Action(Action::CreateServer));
+        assert!(app.prompt.is_none(), "j onto Create server only highlights it");
 
         let mut app = sample();
         app.set_servers(
@@ -2260,27 +2261,24 @@ mod tests {
         let mut screen = Screen::default();
         let _ = draw(&mut app, &mut screen);
         app.move_aim(&screen, Aim::Right);
-        assert_eq!(
-            app.power.as_ref().map(|popup| popup.verb),
-            Some(PowerVerb::On)
-        );
+        assert_eq!(app.focus, Focus::Detail(DetailControl::On));
+        assert!(app.power.is_none(), "l onto On only highlights it");
 
         let mut app = sample();
         app.focus = Focus::Detail(DetailControl::On);
         let mut screen = Screen::default();
         let _ = draw(&mut app, &mut screen);
         app.move_aim(&screen, Aim::Right);
-        assert_eq!(
-            app.power.as_ref().map(|popup| popup.verb),
-            Some(PowerVerb::Off)
-        );
+        assert_eq!(app.focus, Focus::Detail(DetailControl::Off));
+        assert!(app.power.is_none(), "l onto Off only highlights it");
 
         let mut app = sample();
         app.focus = Focus::Detail(DetailControl::On);
         let mut screen = Screen::default();
         let _ = draw(&mut app, &mut screen);
         app.move_aim(&screen, Aim::Left);
-        assert!(app.prompt.is_some(), "h from On opens Create server");
+        assert_eq!(app.focus, Focus::Action(Action::CreateServer));
+        assert!(app.prompt.is_none(), "h from On only highlights Create server");
 
         let mut app = sample();
         app.focus = Focus::Detail(DetailControl::On);
@@ -2292,7 +2290,38 @@ mod tests {
         app.move_aim(&screen, Aim::Right);
         assert_eq!(app.server_pane, ServerPane::Address);
         app.move_aim(&screen, Aim::Left);
+        assert_eq!(app.focus, Focus::ServerPane(ServerPane::Jobs));
         assert_eq!(app.server_pane, ServerPane::Jobs);
+        app.move_aim(&screen, Aim::Left);
+        assert_eq!(app.focus, Focus::Row(0));
+        assert_eq!(app.selected_index(), Some(0));
+
+        let mut app = sample();
+        app.set_servers(
+            vec![
+                ServerRow::listed(
+                    1001,
+                    "web-01.example",
+                    "running",
+                    ServerKind::Virtual,
+                ),
+                ServerRow::listed(
+                    1002,
+                    "web-02.example",
+                    "stopped",
+                    ServerKind::Virtual,
+                ),
+            ],
+            1002,
+        );
+        app.focus = Focus::ServerPane(ServerPane::Address);
+        let mut screen = Screen::default();
+        let _ = draw(&mut app, &mut screen);
+        app.move_aim(&screen, Aim::Left);
+        assert_eq!(app.focus, Focus::ServerPane(ServerPane::Jobs));
+        app.move_aim(&screen, Aim::Left);
+        assert_eq!(app.focus, Focus::Row(1));
+        assert_eq!(app.selected_index(), Some(1));
 
         let mut app = sample();
         app.focus = Focus::Detail(DetailControl::On);

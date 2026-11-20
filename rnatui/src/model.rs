@@ -917,15 +917,15 @@ impl App {
         self.focus = step(&items, self.focus, backward);
     }
 
-    /// Move the outline and fire it. `h`, `j`, `k`, and `l` do what Enter does
-    /// on the control they land on: open the tab, select the row, or press
-    /// the button. A popup still moves by the painted hit boxes.
+    /// Move the outline. `h`, `j`, `k`, and `l` open a tab, select a list row,
+    /// or switch a pane. Write buttons stay outlined until Enter or Space.
+    /// A popup still moves by the painted hit boxes and does not press a button.
     pub fn move_aim(&mut self, screen: &Screen, aim: Aim) {
         let Some(current) = self.aim_target() else {
             return;
         };
         let next = if self.modal() == crate::focus::Modal::None {
-            page_neighbor(screen, current, aim, self.tab)
+            page_neighbor(screen, current, aim, self.tab, self.selected_index())
         } else {
             neighbor(screen, current, aim, self.modal())
         };
@@ -936,7 +936,9 @@ impl App {
             return;
         }
         self.place_aim(next);
-        self.activate_focused();
+        if Self::aim_changes_display(next) {
+            self.activate_focused();
+        }
     }
 
     fn aim_target(&self) -> Option<Target> {
@@ -957,6 +959,14 @@ impl App {
                 .as_ref()
                 .map(|popup| Target::Prompt(popup.focus)),
         }
+    }
+
+    /// Tabs, rows, and server panes redraw. Action and power buttons do not.
+    fn aim_changes_display(target: Target) -> bool {
+        matches!(
+            target,
+            Target::Tab(_) | Target::Row(_) | Target::ServerPane(_)
+        )
     }
 
     fn place_aim(&mut self, target: Target) {
