@@ -318,6 +318,10 @@ pub enum PromptKind {
         mbpkgid: u32,
         fqdn: String,
     },
+    CancelServer {
+        mbpkgid: u32,
+        fqdn: String,
+    },
     CreateZone,
     DeleteZone {
         id: u32,
@@ -400,6 +404,11 @@ pub enum WriteOp {
     DeleteServer {
         mbpkgid: u32,
         fqdn: String,
+    },
+    CancelServer {
+        mbpkgid: u32,
+        fqdn: String,
+        cancel_type: String,
     },
     CreateZone {
         name: String,
@@ -1336,11 +1345,28 @@ impl App {
                     return;
                 };
                 Some(form(
-                    format!("Delete {}", server.fqdn),
+                    format!("Terminate {}", server.fqdn),
                     format!("mbpkgid {}", server.mbpkgid),
                     vec![text_field("hostname", "")],
-                    "Delete",
+                    "Terminate",
                     PromptKind::DeleteServer {
+                        mbpkgid: server.mbpkgid,
+                        fqdn: server.fqdn,
+                    },
+                    back,
+                ))
+            }
+            Action::CancelServer => {
+                let Some(server) = self.selected_server().cloned() else {
+                    self.banner_error("Select a server first");
+                    return;
+                };
+                Some(form(
+                    format!("Cancel {}", server.fqdn),
+                    format!("mbpkgid {}", server.mbpkgid),
+                    cancel_form_fields(),
+                    "Cancel",
+                    PromptKind::CancelServer {
                         mbpkgid: server.mbpkgid,
                         fqdn: server.fqdn,
                     },
@@ -1576,7 +1602,27 @@ impl App {
                     mbpkgid: *mbpkgid,
                     fqdn: fqdn.clone(),
                 }))
-            },
+            }
+            PromptKind::CancelServer { mbpkgid, fqdn } => {
+                let typed =
+                    required_text(field(prompt, "hostname"), "hostname")?;
+                if typed != fqdn.trim() {
+                    return Err("hostname does not match".into());
+                }
+                let cancel_type =
+                    required_text(field(prompt, "cancel_type"), "cancel_type")?;
+                if !cancel_types().contains(&cancel_type.as_str()) {
+                    return Err("cancel_type is required".into());
+                }
+                if field(prompt, "agree") != "true" {
+                    return Err(AGREE_LABEL.into());
+                }
+                Ok(Prepared::Send(WriteOp::CancelServer {
+                    mbpkgid: *mbpkgid,
+                    fqdn: fqdn.clone(),
+                    cancel_type,
+                }))
+            }
             PromptKind::CreateZone => {
                 let name = required_text(field(prompt, "name"), "name")?;
                 let zone_type = optional_text(field(prompt, "type"))
@@ -2549,6 +2595,48 @@ fn form(
     }
 }
 
+const AGREE_LABEL: &str =
+    "I understand that my server and its data will be destroyed.";
+
+fn cancel_types() -> [&'static str; 2] {
+    ["Immediate", "End of Billing Period"]
+}
+
+fn cancel_form_fields() -> Vec<PromptField> {
+    vec![
+        text_field("hostname", ""),
+        ready_choice(
+            "cancel_type",
+            cancel_types()
+                .into_iter()
+                .map(|value| Choice {
+                    label: value.to_string(),
+                    value: value.to_string(),
+                })
+                .collect(),
+        ),
+        ready_choice(
+            "agree",
+            vec![Choice {
+                label: AGREE_LABEL.to_string(),
+                value: "true".to_string(),
+            }],
+        ),
+    ]
+}
+
+fn ready_choice(label: &str, options: Vec<Choice>) -> PromptField {
+    PromptField {
+        label: label.to_string(),
+        value: String::new(),
+        kind: FieldKind::Choice {
+            options,
+            picked: None,
+            phase: ChoicePhase::Ready,
+        },
+    }
+}
+
 fn text_field(label: &str, value: &str) -> PromptField {
     PromptField {
         label: label.to_string(),
@@ -3447,6 +3535,8 @@ mod tests {
         let mut app = servers(&[1001, 1002]);
         app.focus = Focus::Action(Action::DeleteServer);
         app.focus_move(false);
+        assert_eq!(app.focus, Focus::Action(Action::CancelServer));
+        app.focus_move(false);
         assert_eq!(app.focus, Focus::ServerPane(ServerPane::Jobs));
         assert_eq!(app.server_pane, ServerPane::Jobs);
         assert!(app.drain_requests().is_empty());
@@ -3558,6 +3648,8 @@ mod tests {
         app.focus = Focus::Action(Action::DeleteServer);
         app.activate_focused();
         let prompt = app.prompt.as_ref().expect("hostname");
+        assert!(prompt.title.starts_with("Terminate "), "{}", prompt.title);
+        assert_eq!(prompt.submit_label, "Terminate");
         assert!(prompt.title.contains("web-01.example"), "{}", prompt.title);
         assert!(prompt.hint.contains("1001"), "{}", prompt.hint);
         assert_eq!(prompt.fields.len(), 1);
@@ -3588,6 +3680,51 @@ mod tests {
             other => panic!("expected a server delete, got {other:?}"),
         }
         assert!(app.prompt.is_none());
+    }
+
+    #[test]
+    fn cancel_server_asks_for_the_hostname_then_sends() {
+        let mut app = servers(&[1001]);
+        app.servers[0].fqdn = "web-01.example".into();
+        app.focus = Focus::Action(Action::CancelServer);
+        app.activate_focused();
+        let prompt = app.prompt.as_ref().expect("hostname");
+        assert!(prompt.title.starts_with("Cancel "), "{}", prompt.title);
+        assert_eq!(prompt.submit_label, "Cancel");
+        assert!(prompt.fields.iter().any(|field| field.label == "cancel_type"));
+        assert!(prompt.fields.iter().any(|field| {
+            field.label == "agree" && field.shown().contains("destroyed")
+                || matches!(
+                    &field.kind,
+                    crate::model::FieldKind::Choice { options, .. }
+                        if options.iter().any(|choice| choice.label.contains(
+                            "I understand that my server and its data will be destroyed."
+                        ))
+                )
+        }));
+        for ch in "web-01.example".chars() {
+            app.type_char(ch);
+        }
+        app.activate_focused();
+        assert!(app.nudge_choice(1));
+        app.activate_focused();
+        assert!(app.nudge_choice(1));
+        app.activate_focused();
+        match app.pending.as_slice() {
+            [Request::Write {
+                op: WriteOp::CancelServer {
+                    mbpkgid,
+                    fqdn,
+                    cancel_type,
+                },
+                ..
+            }] => {
+                assert_eq!(*mbpkgid, 1001);
+                assert_eq!(fqdn, "web-01.example");
+                assert_eq!(cancel_type, "Immediate");
+            }
+            other => panic!("expected a package cancel, got {other:?}"),
+        }
     }
 
     #[test]

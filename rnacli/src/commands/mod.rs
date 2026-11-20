@@ -189,6 +189,34 @@ pub enum Commands {
     /// generate completions
     #[command(visible_alias = "gen")]
     GenerateCompletions { shell: Shell },
+    /// Terminate a server.
+    Terminate {
+        /// Package id.
+        #[arg(short, long)]
+        mbpkgid: u32,
+    },
+    /// Cancel a server package.
+    Cancel {
+        /// Package id.
+        #[arg(short, long)]
+        mbpkgid: u32,
+        /// `Immediate` or `End of Billing Period`.
+        #[arg(long, value_parser = parse_cancel_type)]
+        cancel_type: String,
+        /// I understand that my server and its data will be destroyed.
+        #[arg(long, required = true, action = clap::ArgAction::SetTrue)]
+        agree: bool,
+    },
+}
+
+fn parse_cancel_type(raw: &str) -> Result<String, String> {
+    match raw {
+        "Immediate" | "End of Billing Period" => Ok(raw.to_string()),
+        _ => Err(
+            "cancel_type must be \"Immediate\" or \"End of Billing Period\""
+                .to_string(),
+        ),
+    }
 }
 
 #[derive(Subcommand, Debug)]

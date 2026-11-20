@@ -11,6 +11,8 @@
 //! rnacli get server -m <mbpkgid>
 //! rnacli power-virt off -m <mbpkgid>
 //! rnacli power-ded off -m <mbpkgid>
+//! rnacli terminate -m <mbpkgid>
+//! rnacli cancel -m <mbpkgid> --cancel-type Immediate --agree
 //! ```
 //!
 // Copyright (C) 2025 Dennis Durling
@@ -52,6 +54,19 @@ async fn main() -> Result<()> {
         },
         Some(Commands::PowerVirt { cmd }) => power_virt(cmd).await,
         Some(Commands::PowerDed { cmd }) => power_ded(cmd).await,
+        Some(Commands::Terminate { mbpkgid }) => terminate(mbpkgid).await,
+        Some(Commands::Cancel {
+            mbpkgid,
+            cancel_type,
+            agree,
+        }) => {
+            if !agree {
+                bail!(
+                    "I understand that my server and its data will be destroyed."
+                );
+            }
+            cancel(mbpkgid, cancel_type).await
+        }
         None => Ok(()),
     }
 }
@@ -111,6 +126,32 @@ async fn power_virt(cmd: PowerCommands) -> Result<()> {
             endpoints::Server::reboot(&na_client, mbpkgid, &body).await?
         }
     };
+    println!("{result}");
+    Ok(())
+}
+
+async fn terminate(mbpkgid: u32) -> Result<()> {
+    require_id("mbpkgid", mbpkgid)?;
+    let na_client = power_client().await?;
+    let body = endpoints::DeleteServer::default();
+    let deleted =
+        endpoints::Server::delete(&na_client, mbpkgid, &body).await?;
+    println!("terminated {mbpkgid} id {}", deleted.id);
+    Ok(())
+}
+
+async fn cancel(mbpkgid: u32, cancel_type: String) -> Result<()> {
+    require_id("mbpkgid", mbpkgid)?;
+    let na_client = power_client().await?;
+    let body = endpoints::CancelPackage {
+        mbpkgid: i64::from(mbpkgid),
+        domu_package: None,
+        comments: None,
+        cancel_type,
+        agree: true,
+        password: None,
+    };
+    let result = endpoints::Package::cancel(&na_client, &body).await?;
     println!("{result}");
     Ok(())
 }

@@ -6,9 +6,11 @@ use std::sync::Arc;
 
 use rnaapi::NaClient;
 use rnaapi::endpoints::{
-    ContractUsage, DedicatedAction, DeleteServer, Details, IPv4, IPv6, Image,
-    Invoices, Location, MetalServer, MonthlyBw, Plan, Record, RecordBody,
-    RecordUpdate, SSHKeys, Server, ServerBuild, ServerBuildRequest,
+    CancelPackage, ContractUsage, DedicatedAction, DeleteServer, Details, IPv4,
+    IPv6, Image,
+    Invoices, Location, MetalServer, MonthlyBw, Package, Plan, Record,
+    RecordBody, RecordUpdate, SSHKeys, Server, ServerBuild,
+    ServerBuildRequest,
     ServerPower, Sizes, SrvJob, SrvStatus, SshKeyBody, Zone, ZoneBody,
 };
 use serde_json::Value;
@@ -511,6 +513,24 @@ async fn run_write(client: &NaClient, op: WriteOp) -> Result<String, String> {
                 .await
                 .map_err(|err| err.to_string())?;
             Ok(format!("server deleted: {fqdn} mbpkgid {mbpkgid}"))
+        }
+        WriteOp::CancelServer {
+            mbpkgid,
+            fqdn,
+            cancel_type,
+        } => {
+            let body = CancelPackage {
+                mbpkgid: i64::from(mbpkgid),
+                domu_package: None,
+                comments: None,
+                cancel_type,
+                agree: true,
+                password: None,
+            };
+            Package::cancel(client, &body)
+                .await
+                .map_err(|err| err.to_string())?;
+            Ok(format!("package canceled: {fqdn} mbpkgid {mbpkgid}"))
         }
         WriteOp::CreateZone {
             name,
@@ -1258,6 +1278,27 @@ mod tests {
     fn a_server_delete_body_is_empty() {
         let value = serde_json::to_value(DeleteServer::default()).unwrap();
         assert_eq!(value, serde_json::json!({}));
+    }
+
+    #[test]
+    fn a_package_cancel_body_is_mbpkgid_cancel_type_and_agree() {
+        let body = CancelPackage {
+            mbpkgid: 1001,
+            domu_package: None,
+            comments: None,
+            cancel_type: "Immediate".to_string(),
+            agree: true,
+            password: None,
+        };
+        let value = serde_json::to_value(&body).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "mbpkgid": 1001,
+                "cancel_type": "Immediate",
+                "agree": true
+            })
+        );
     }
 
     #[test]

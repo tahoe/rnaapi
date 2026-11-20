@@ -179,21 +179,31 @@ fn paint_command_row(
         return 0;
     }
     let mut x = area.x;
+    let mut y = area.y;
+    let mut rows = 1u16;
     for command in commands {
         let width = button_width(command.label);
+        if x != area.x && x.saturating_add(width) > area.right() {
+            y = y.saturating_add(1);
+            if y >= area.bottom() {
+                break;
+            }
+            x = area.x;
+            rows = rows.saturating_add(1);
+        }
         if x.saturating_add(width) > area.right() {
             break;
         }
         let rect = Rect {
             x,
-            y: area.y,
+            y,
             width,
             height: 1,
         };
         paint_command(frame, screen, rect, command);
         x = x.saturating_add(width).saturating_add(1);
     }
-    1
+    rows
 }
 
 /// A one-line control. Green and bold when it is the outline.
@@ -2056,9 +2066,15 @@ mod tests {
         let on = hit(&screen, Target::Detail(DetailControl::On));
         let rebuild = hit(&screen, Target::Action(Action::RebuildServer));
         let delete = hit(&screen, Target::Action(Action::DeleteServer));
+        let cancel = hit(&screen, Target::Action(Action::CancelServer));
         assert!(on.x > screen.columns_split.x);
         assert!(rebuild.x > on.x);
         assert!(delete.x > rebuild.x);
+        if cancel.y == delete.y {
+            assert!(cancel.x > delete.x);
+        } else {
+            assert_eq!(cancel.y, delete.y.saturating_add(1));
+        }
         assert_eq!(on.y, rebuild.y);
         assert!(screen.detail.y > on.y);
         assert!(

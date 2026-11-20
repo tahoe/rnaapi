@@ -3,7 +3,6 @@
 // under the GNU General Public License v3.0
 use serde::{Deserialize, Serialize};
 
-use super::servers::DeleteServer;
 use crate::{EndpointGetAll, EndpointGetOne, EndpointWrite};
 
 #[derive(
@@ -19,7 +18,7 @@ use crate::{EndpointGetAll, EndpointGetOne, EndpointWrite};
 #[serde(rename_all = "snake_case")]
 #[getone(path = "cloud/package/{}", id: u32)]
 #[getall(path = "cloud/packages")]
-#[write(post, name = "cancel", path = "cloud/package/cancel", body: DeleteServer, returns = serde_json::Value)]
+#[write(post, name = "cancel", path = "cloud/package/cancel", body: CancelPackage, returns = serde_json::Value)]
 pub struct Package {
     pub mbpkgid: u32,
     pub package_status: String,
@@ -49,7 +48,7 @@ pub struct CancelPackage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comments: Option<String>,
     pub cancel_type: String,
-    pub agree: i64,
+    pub agree: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
 }

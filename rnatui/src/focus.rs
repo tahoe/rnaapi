@@ -51,6 +51,7 @@ pub enum Action {
     CreateServer,
     RebuildServer,
     DeleteServer,
+    CancelServer,
     NewKey,
     UpdateKey,
     DeleteKey,
@@ -66,7 +67,8 @@ impl Action {
         match self {
             Action::CreateServer => "Create server",
             Action::RebuildServer => "Rebuild",
-            Action::DeleteServer => "Delete",
+            Action::DeleteServer => "Terminate",
+            Action::CancelServer => "Cancel",
             Action::NewKey => "New key",
             Action::UpdateKey => "Update",
             Action::DeleteKey => "Delete",
@@ -91,7 +93,11 @@ impl Action {
     /// Buttons that change the selected row. Hidden when nothing is selected.
     pub fn right(tab: Tab) -> &'static [Action] {
         match tab {
-            Tab::Servers => &[Action::RebuildServer, Action::DeleteServer],
+            Tab::Servers => &[
+                Action::RebuildServer,
+                Action::DeleteServer,
+                Action::CancelServer,
+            ],
             Tab::SshKeys => &[Action::UpdateKey, Action::DeleteKey],
             Tab::Dns => &[
                 Action::DeleteZone,
@@ -652,6 +658,7 @@ mod tests {
                 Focus::Detail(DetailControl::Reboot),
                 Focus::Action(Action::RebuildServer),
                 Focus::Action(Action::DeleteServer),
+                Focus::Action(Action::CancelServer),
                 Focus::ServerPane(ServerPane::Jobs),
                 Focus::ServerPane(ServerPane::Address),
                 Focus::ServerPane(ServerPane::Bandwidth),
@@ -659,11 +666,15 @@ mod tests {
         );
         assert_eq!(
             step(&order, Focus::Action(Action::DeleteServer), false),
+            Focus::Action(Action::CancelServer)
+        );
+        assert_eq!(
+            step(&order, Focus::Action(Action::CancelServer), false),
             Focus::ServerPane(ServerPane::Jobs)
         );
         assert_eq!(
             step(&order, Focus::ServerPane(ServerPane::Jobs), true),
-            Focus::Action(Action::DeleteServer)
+            Focus::Action(Action::CancelServer)
         );
         assert_eq!(
             step(&order, Focus::ServerPane(ServerPane::Bandwidth), false),
@@ -693,6 +704,7 @@ mod tests {
                 Focus::Detail(_)
                     | Focus::Action(Action::RebuildServer)
                     | Focus::Action(Action::DeleteServer)
+                    | Focus::Action(Action::CancelServer)
             )
         }));
         assert_eq!(
