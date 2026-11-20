@@ -1,8 +1,9 @@
 name: release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
@@ -13,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.ref_name }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -25,7 +26,7 @@ jobs:
 
       - name: Package binaries and deb
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.ref_name }}
         run: |
           set -eu
           triple=$(rustc -vV | awk '/^host:/ { print $2 }')
@@ -53,8 +54,19 @@ jobs:
           install -m 0755 target/release/rnatui "${out}/rnatui-${triple}"
           echo "ASSET_DIR=${out}" >> "${GITHUB_ENV}"
 
-      - name: Upload release assets
+      - name: Publish the release and upload assets
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "${TAG}" "${ASSET_DIR}"/* --repo "${GITHUB_REPOSITORY}"
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          if ! gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release create "${TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${TAG}" \
+              --verify-tag \
+              --notes "Linux rnacli, rnatui, and the rnaapi deb."
+          fi
+          gh release upload "${TAG}" "${ASSET_DIR}"/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
