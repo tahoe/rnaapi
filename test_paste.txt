@@ -1,0 +1,366 @@
+fn field<'a>(prompt: &'a Prompt, label: &str) -> &'a str {
+    prompt
+        .fields
+        .iter()
+        .find(|field| field.label == label)
+        .map(|field| field.value.as_str())
+        .unwrap_or("")
+}
+
+fn build_fields(prompt: &Prompt) -> Result<BuildFields, String> {
+    Ok(BuildFields {
+        fqdn: optional_text(field(prompt, "fqdn")),
+        plan: optional_text(field(prompt, "plan")),
+        location: optional_i64(field(prompt, "location"), "location")?,
+        image: optional_i64(field(prompt, "image"), "image")?,
+        ssh_key_id: optional_i64(field(prompt, "ssh key"), "ssh key")?,
+        package_billing: None,
+        package_billing_contract_id: None,
+    })
+}
+
+/// `Server::buy` stays unsent until plan, location, image, fqdn, and an ssh
+/// key id are set. A missing usage contract does not drop those fields.
+/// A dropdown that is still loading or failed is named on the form.
+fn create_server_ready(prompt: &Prompt) -> Result<(), String> {
+    let mut loading = Vec::new();
+    let mut failed = Vec::new();
+    let mut missing = Vec::new();
+    if field(prompt, "fqdn").trim().is_empty() {
+        missing.push("fqdn");
+    }
+    for label in ["plan", "location", "image", "ssh key"] {
+        match choice_phase(prompt, label) {
+            Some(ChoicePhase::Loading) => loading.push(label),
+            Some(ChoicePhase::Failed) => failed.push(label),
+            _ => {
+                if field(prompt, label).trim().is_empty() {
+                    missing.push(label);
+                }
+            }
+        }
+    }
+    if !loading.is_empty() {
+        return Err(state_line(
+            &loading,
+            "is still loading",
+            "are still loading",
+        ));
+    }
+    if !failed.is_empty() {
+        return Err(state_line(&failed, "is unavailable", "are unavailable"));
+    }
+    if !missing.is_empty() {
+        return Err(state_line(&missing, "is required", "are required"));
+    }
+    Ok(())
+}
+
+fn choice_phase(prompt: &Prompt, label: &str) -> Option<ChoicePhase> {
+    let field = prompt.fields.iter().find(|field| field.label == label)?;
+    match &field.kind {
+        FieldKind::Choice { phase, .. } => Some(*phase),
+        FieldKind::Text => None,
+    }
+}
+
+fn state_line(names: &[&str], one: &str, many: &str) -> String {
+    let verb = if names.len() == 1 { one } else { many };
+    format!("{} {verb}", name_list(names))
+}
+
+fn name_list(names: &[&str]) -> String {
+    let Some((last, head)) = names.split_last() else {
+        return String::new();
+    };
+    match head {
+        [] => (*last).to_string(),
+        [only] => format!("{only} and {last}"),
+        _ => format!("{}, and {last}", head.join(", ")),
+    }
+}
+
+fn required_text(value: &str, label: &str) -> Result<String, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(format!("{label} is required"));
+    }
+    Ok(value.to_string())
+}
+
+fn optional_text(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn optional_i64(value: &str, label: &str) -> Result<Option<i64>, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    value
+        .parse::<i64>()
+        .map(Some)
+        .map_err(|_| format!("{label} must be a number"))
+}
+
+fn required_u32(value: &str, label: &str) -> Result<u32, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(format!("{label} is required"));
+    }
+    value
+        .parse::<u32>()
+        .map_err(|_| format!("{label} must be a number"))
+}
+
+fn position<T>(
+    id: Option<u64>, rows: &[T], key: impl Fn(&T) -> u64,
+) -> Option<usize> {
+    let id = id?;
+    rows.iter().position(|row| key(row) == id)
+}
+
+const TRACKS: usize = 13;
+
+fn slot_index(slot: Slot) -> usize {
+    match slot {
+        Slot::Servers => 0,
+        Slot::ServerDetail => 1,
+        Slot::Ssh => 2,
+        Slot::SshCreate => 3,
+        Slot::Locations => 4,
+        Slot::LocationDetail => 5,
+        Slot::Zones => 6,
+        Slot::ZoneDetail => 7,
+        Slot::Account => 8,
+        Slot::Power => 9,
+        Slot::ServerList => 10,
+        Slot::Write => 11,
+        Slot::Catalog => 12,
+    }
+}
+
+fn detail_slot(tab: Tab) -> Slot {
+    match tab {
+        Tab::Servers => Slot::ServerDetail,
+        Tab::SshKeys => Slot::Ssh,
+        Tab::Locations => Slot::LocationDetail,
+        Tab::Dns => Slot::ZoneDetail,
+        Tab::Account => Slot::Account,
+    }
+}
+
+/// An id that appears in both lists stays virtual. Dedicated is the metal-only id.
+pub fn merge_servers(
+    virtuals: Vec<ServerRow>, metals: Vec<ServerRow>,
+) -> Vec<ServerRow> {
+    let mut seen = std::collections::HashSet::new();
+    let mut rows = Vec::new();
+    for mut row in virtuals {
+        if !seen.insert(row.mbpkgid) {
+            continue;
+        }
+        row.kind = ServerKind::Virtual;
+        rows.push(row);
+    }
+    for mut row in metals {
+        if !seen.insert(row.mbpkgid) {
+            continue;
+        }
+        row.kind = ServerKind::Dedicated;
+        rows.push(row);
+    }
+    rows.sort_by_key(|row| row.mbpkgid);
+    rows
+}
+
+pub fn power_call_text(
+    kind: ServerKind, verb: PowerVerb, mbpkgid: u32, force: bool,
+) -> String {
+    let mut text =
+        format!("{} {} -m {mbpkgid}", kind.command(), verb.command());
+    if force {
+        text.push_str(" --force");
+    }
+    text
+}
+
+pub fn power_confirm_text(
+    kind: ServerKind, verb: PowerVerb, mbpkgid: u32, fqdn: &str, force: bool,
+) -> String {
+    format!(
+        "{}\nmbpkgid {mbpkgid}\nfqdn {fqdn}\nkind {}\n{}",
+        verb.title(),
+        kind.label(),
+        power_call_text(kind, verb, mbpkgid, force)
+    )
+}
+
+/// `true` is sent. `false` is omitted so the API body skips the field.
+pub fn force_flag(force: bool) -> Option<bool> {
+    force.then_some(true)
+}
+
+pub fn api_host(url: &str) -> String {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let rest = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    let rest = rest.rsplit('@').next().unwrap_or(rest);
+    let host = if let Some(inside) = rest.strip_prefix('[') {
+        inside.split(']').next().unwrap_or(rest)
+    } else {
+        rest.split(':').next().unwrap_or(rest)
+    };
+    if host.is_empty() {
+        "unknown".to_string()
+    } else {
+        host.to_string()
+    }
+}
+
+const LOG_KEEP: usize = 48;
+
+fn loaded(plural: &str, count: usize) -> String {
+    let word = if count == 1 {
+        plural.trim_end_matches('s')
+    } else {
+        plural
+    };
+    format!("loaded {count} {word}")
+}
+
+/// The create result names the key. The line stays that short, so a key body
+/// in the payload is not written into the log.
+fn ssh_created_line(detail: &str) -> String {
+    let name = detail.split("Name:").nth(1).and_then(|rest| {
+        let name = rest.trim().split(',').next().unwrap_or("").trim();
+        (!name.is_empty()).then(|| name.to_string())
+    });
+    match name {
+        Some(name) => format!("ssh key created: {name}"),
+        None => "ssh key created".to_string(),
+    }
+}
+
+/// One status line. A private key or an API key is not kept.
+fn status_text(text: String) -> String {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let flat = redact_private_keys(&flat);
+    let flat = redact_assignments(&flat);
+    let max = 160;
+    let count = flat.chars().count();
+    if count <= max {
+        return flat;
+    }
+    let mut out: String = flat.chars().take(max - 1).collect();
+    out.push('…');
+    out
+}
+
+fn redact_private_keys(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some((start, header)) = find_private_begin(rest) {
+        out.push_str(&rest[..start]);
+        let after = &rest[start..];
+        out.push_str("[redacted]");
+        rest = match find_private_end(&after[header..]) {
+            Some(end) => &after[header + end..],
+            None => "",
+        };
+    }
+    out.push_str(rest);
+    out
+}
+
+fn find_private_begin(text: &str) -> Option<(usize, usize)> {
+    let lower = text.to_ascii_lowercase();
+    let markers = [
+        "-----begin openssh private key-----",
+        "-----begin rsa private key-----",
+        "-----begin ec private key-----",
+        "-----begin dsa private key-----",
+        "-----begin private key-----",
+    ];
+    markers
+        .iter()
+        .filter_map(|marker| {
+            lower.find(marker).map(|index| (index, marker.len()))
+        })
+        .min_by_key(|(index, _)| *index)
+}
+
+fn find_private_end(text: &str) -> Option<usize> {
+    let lower = text.to_ascii_lowercase();
+    let start = lower.find("-----end ")?;
+    let from = start + "-----end ".len();
+    let rel = lower[from..].find("-----")?;
+    Some(from + rel + "-----".len())
+}
+
+fn redact_assignments(text: &str) -> String {
+    const NAMES: [&str; 4] = ["api_key", "apikey", "password", "key"];
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if let Some(name) = name_at(text, i, &NAMES) {
+            let boundary = i == 0 || !is_name_byte(bytes[i - 1]);
+            if boundary {
+                let mut j = i + name.len();
+                while j < bytes.len() && bytes[j] == b' ' {
+                    j += 1;
+                }
+                if j < bytes.len() && bytes[j] == b'=' {
+                    j += 1;
+                    while j < bytes.len() && bytes[j] == b' ' {
+                        j += 1;
+                    }
+                    while j < bytes.len()
+                        && bytes[j] != b'&'
+                        && bytes[j] != b' '
+                    {
+                        j += 1;
+                    }
+                    out.push_str(name);
+                    out.push_str("=[redacted]");
+                    i = j;
+                    continue;
+                }
+            }
+        }
+        let ch = text[i..].chars().next().unwrap_or(' ');
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+fn name_at<'a>(text: &str, index: usize, names: &[&'a str]) -> Option<&'a str> {
+    let rest = text.get(index..)?;
+    names.iter().copied().find(|name| {
+        rest.len() >= name.len()
+            && rest.as_bytes()[..name.len()]
+                .eq_ignore_ascii_case(name.as_bytes())
+    })
+}
+
+fn is_name_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+pub fn short_fingerprint(value: &str) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    if chars.len() <= 28 {
+        return value.to_string();
+    }
+    let head: String = chars.iter().take(18).collect();
+    let tail: String = chars.iter().skip(chars.len() - 4).collect();
+    format!("{head}…{tail}")
+}
+
+

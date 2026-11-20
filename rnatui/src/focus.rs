@@ -129,8 +129,6 @@ pub enum Slot {
     Write,
     /// Plans, images, locations, and SSH keys for the create-server form.
     Catalog,
-    /// `ContractUsage::get` when a delete confirm does not have a contract yet.
-    Usage,
 }
 
 /// Subtabs under the server detail. Tab moves the outline.

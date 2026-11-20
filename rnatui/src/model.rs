@@ -318,17 +318,6 @@ pub enum PromptKind {
         mbpkgid: u32,
         fqdn: String,
     },
-    /// Hostname matched. The radio picks `cancel_type`.
-    DeleteCancelType {
-        mbpkgid: u32,
-        fqdn: String,
-    },
-    /// Radio picked. Confirm sends `Package::cancel`.
-    ConfirmDeleteServer {
-        mbpkgid: u32,
-        fqdn: String,
-        cancel_type: String,
-    },
     CreateZone,
     DeleteZone {
         id: u32,
@@ -411,13 +400,6 @@ pub enum WriteOp {
     DeleteServer {
         mbpkgid: u32,
         fqdn: String,
-        cancel_type: String,
-        contract_id: i64,
-        package: Option<String>,
-        plan_id: Option<u32>,
-        pkg_id: Option<u32>,
-        /// Host id. `Server`, `ServerRow`, and `ServerDetail` have none.
-        host: Option<u32>,
     },
     CreateZone {
         name: String,
@@ -511,8 +493,6 @@ pub enum Request {
     },
     /// Plans, images, locations, and SSH keys for the open build form.
     Catalog(Token),
-    /// `GET cloud/contract/usage` for a delete that does not have a contract yet.
-    UsageContract(Token),
 }
 
 impl Request {
@@ -530,8 +510,7 @@ impl Request {
             | Request::LocationDetail { token, .. }
             | Request::ZoneDetail { token, .. }
             | Request::Write { token, .. }
-            | Request::Catalog(token)
-            | Request::UsageContract(token) => *token,
+            | Request::Catalog(token) => *token,
         }
     }
 }
@@ -591,10 +570,6 @@ pub enum Reply {
     Catalog {
         token: Token,
         result: Result<BuildChoices, String>,
-    },
-    UsageContract {
-        token: Token,
-        result: Result<UsageBilling, String>,
     },
 }
 
@@ -873,9 +848,6 @@ impl App {
         if self.is_loading(Slot::Catalog) && self.prompt.is_some() {
             return Some("Loading choices");
         }
-        if self.is_loading(Slot::Usage) && self.prompt.is_some() {
-            return Some("Loading usage contract");
-        }
         let slot = match self.tab {
             Tab::Servers if self.is_loading(Slot::Servers) => Slot::Servers,
             Tab::Servers if self.is_loading(Slot::ServerDetail) => {
@@ -911,7 +883,6 @@ impl App {
             Slot::ServerList => "Loading jobs",
             Slot::Write => "Saving",
             Slot::Catalog => "Loading choices",
-            Slot::Usage => "Loading usage contract",
         })
     }
 
@@ -1195,13 +1166,9 @@ impl App {
             self.power_accepted = None;
         }
         let catalog = matches!(request, Request::Catalog(_));
-        let usage = matches!(request, Request::UsageContract(_));
         self.fail_token(token, "API is not configured".to_string());
         if catalog {
             self.fail_open_choices();
-        }
-        if usage && let Some(popup) = self.prompt.as_mut() {
-            popup.hint = "API is not configured".to_string();
         }
     }
 
@@ -1243,9 +1210,6 @@ impl App {
             Reply::Write { token, result } => self.apply_write(token, result),
             Reply::Catalog { token, result } => {
                 self.apply_catalog(token, result)
-            }
-            Reply::UsageContract { token, result } => {
-                self.apply_usage(token, result)
             }
         }
     }
@@ -1546,21 +1510,7 @@ impl App {
                 self.pending.push(Request::SshCreate { token, file });
             }
             Ok(Prepared::Stay(next)) => self.prompt = Some(next),
-            Ok(Prepared::LoadUsage) => self.queue_usage_contract(),
             Err(err) => self.reject_prompt(err),
-        }
-    }
-
-    /// `ContractUsage::get` while the confirm dialog stays open.
-    fn queue_usage_contract(&mut self) {
-        if self.is_loading(Slot::Usage) {
-            self.reject_prompt("usage contract is still loading");
-            return;
-        }
-        let token = self.issue(Slot::Usage, 0);
-        self.pending.push(Request::UsageContract(token));
-        if let Some(popup) = self.prompt.as_mut() {
-            popup.hint = "Loading usage contract".to_string();
         }
     }
 
@@ -1622,55 +1572,10 @@ impl App {
                 if typed != fqdn.trim() {
                     return Err("hostname does not match".into());
                 }
-                Ok(Prepared::Stay(form(
-                    format!("Delete {fqdn}"),
-                    format!(
-                        "Up and down pick {CANCEL_IMMEDIATE} or {CANCEL_END_OF_CYCLE}."
-                    ),
-                    vec![cancel_type_field()],
-                    "Delete",
-                    PromptKind::DeleteCancelType {
-                        mbpkgid: *mbpkgid,
-                        fqdn: fqdn.clone(),
-                    },
-                    prompt.return_focus,
-                )))
-            }
-            PromptKind::DeleteCancelType { mbpkgid, fqdn } => {
-                let cancel_type =
-                    required_text(field(prompt, "cancel type"), "cancel type")?;
-                Ok(Prepared::Stay(form(
-                    "Confirm cancellation",
-                    format!("{fqdn} mbpkgid {mbpkgid}"),
-                    Vec::new(),
-                    "Confirm cancellation",
-                    PromptKind::ConfirmDeleteServer {
-                        mbpkgid: *mbpkgid,
-                        fqdn: fqdn.clone(),
-                        cancel_type,
-                    },
-                    prompt.return_focus,
-                )))
-            }
-            PromptKind::ConfirmDeleteServer {
-                mbpkgid,
-                fqdn,
-                cancel_type,
-            } => match &self.usage_billing {
-                Some(billing) => {
-                    let contract_id = contract_id_from(billing)?;
-                    Ok(Prepared::Send(WriteOp::DeleteServer {
-                        mbpkgid: *mbpkgid,
-                        fqdn: fqdn.clone(),
-                        cancel_type: cancel_type.clone(),
-                        contract_id,
-                        package: self.package_for_delete(*mbpkgid),
-                        plan_id: self.plan_id_for_delete(*mbpkgid),
-                        pkg_id: self.pkg_id_for_delete(*mbpkgid),
-                        host: self.host_for_delete(*mbpkgid),
-                    }))
-                }
-                None => Ok(Prepared::LoadUsage),
+                Ok(Prepared::Send(WriteOp::DeleteServer {
+                    mbpkgid: *mbpkgid,
+                    fqdn: fqdn.clone(),
+                }))
             },
             PromptKind::CreateZone => {
                 let name = required_text(field(prompt, "name"), "name")?;
@@ -2411,112 +2316,6 @@ impl App {
         }
     }
 
-    fn apply_usage(
-        &mut self, token: Token, result: Result<UsageBilling, String>,
-    ) {
-        if self.track(Slot::Usage).latest != token.request_id {
-            return;
-        }
-        self.finish(token);
-        let waiting = self.prompt.as_ref().is_some_and(|prompt| {
-            matches!(prompt.kind, PromptKind::ConfirmDeleteServer { .. })
-        });
-        let billing = match result {
-            Ok(billing) => billing,
-            Err(err) => {
-                if waiting {
-                    self.reject_prompt(err);
-                }
-                return;
-            }
-        };
-        let contract_id = match contract_id_from(&billing) {
-            Ok(id) => id,
-            Err(err) => {
-                if waiting {
-                    self.reject_prompt(err);
-                }
-                return;
-            }
-        };
-        self.usage_billing = Some(billing);
-        if !waiting {
-            return;
-        }
-        self.send_delete(contract_id);
-    }
-
-    fn send_delete(&mut self, contract_id: i64) {
-        let Some(prompt) = self.prompt.clone() else {
-            return;
-        };
-        let PromptKind::ConfirmDeleteServer {
-            mbpkgid,
-            fqdn,
-            cancel_type,
-        } = prompt.kind
-        else {
-            return;
-        };
-        if self.write_busy() {
-            self.reject_prompt("A change is already running");
-            return;
-        }
-        self.prompt = None;
-        self.focus = prompt.return_focus;
-        let token = self.issue(Slot::Write, 0);
-        self.pending.push(Request::Write {
-            token,
-            op: WriteOp::DeleteServer {
-                mbpkgid,
-                fqdn,
-                cancel_type,
-                contract_id,
-                package: self.package_for_delete(mbpkgid),
-                plan_id: self.plan_id_for_delete(mbpkgid),
-                pkg_id: self.pkg_id_for_delete(mbpkgid),
-                host: self.host_for_delete(mbpkgid),
-            },
-        });
-    }
-
-    /// Plan name on the server being deleted. An empty name is omitted.
-    fn package_for_delete(&self, mbpkgid: u32) -> Option<String> {
-        self.servers
-            .iter()
-            .find(|row| row.mbpkgid == mbpkgid)
-            .and_then(|row| {
-                row.package
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|name| !name.is_empty())
-                    .map(str::to_string)
-            })
-    }
-
-    /// `Server::plan_id` on the server being deleted. Missing stays omitted.
-    fn plan_id_for_delete(&self, mbpkgid: u32) -> Option<u32> {
-        self.servers
-            .iter()
-            .find(|row| row.mbpkgid == mbpkgid)
-            .and_then(|row| row.plan_id)
-    }
-
-    /// `Server::pkg_id` on the server being deleted. Missing stays omitted.
-    fn pkg_id_for_delete(&self, mbpkgid: u32) -> Option<u32> {
-        self.servers
-            .iter()
-            .find(|row| row.mbpkgid == mbpkgid)
-            .and_then(|row| row.pkg_id)
-    }
-
-    /// Host id on the server being deleted.
-    /// `Server`, `ServerRow`, and `ServerDetail` have no host id.
-    /// `MetalServer::hostname` and `Server::fqdn` are names, so this stays unset.
-    fn host_for_delete(&self, _mbpkgid: u32) -> Option<u32> {
-        None
-    }
-
     fn apply_write(&mut self, token: Token, result: Result<String, String>) {
         if self.track(Slot::Write).latest != token.request_id {
             return;
@@ -2724,14 +2523,7 @@ enum Prepared {
     Send(WriteOp),
     Ssh(Option<String>),
     Stay(Prompt),
-    /// Confirm is waiting on `ContractUsage::get`. The dialog stays open.
-    LoadUsage,
 }
-
-/// Portal delete sends `Immediate`. The v2 spec types `cancel_type` as a
-/// string and does not name the end-of-cycle value.
-const CANCEL_IMMEDIATE: &str = "Immediate";
-const CANCEL_END_OF_CYCLE: &str = "End of Billing Cycle";
 
 fn form(
     title: impl Into<String>, hint: impl Into<String>,
@@ -2760,35 +2552,6 @@ fn text_field(label: &str, value: &str) -> PromptField {
         value: value.to_string(),
         kind: FieldKind::Text,
     }
-}
-
-fn cancel_type_field() -> PromptField {
-    PromptField {
-        label: "cancel type".to_string(),
-        value: String::new(),
-        kind: FieldKind::Choice {
-            options: vec![
-                Choice {
-                    label: CANCEL_IMMEDIATE.to_string(),
-                    value: CANCEL_IMMEDIATE.to_string(),
-                },
-                Choice {
-                    label: CANCEL_END_OF_CYCLE.to_string(),
-                    value: CANCEL_END_OF_CYCLE.to_string(),
-                },
-            ],
-            picked: None,
-            phase: ChoicePhase::Ready,
-        },
-    }
-}
-
-fn contract_id_from(billing: &UsageBilling) -> Result<i64, String> {
-    billing
-        .id
-        .trim()
-        .parse::<i64>()
-        .map_err(|_| "id is missing".to_string())
 }
 
 fn choice_field(label: &str) -> PromptField {
@@ -2963,7 +2726,7 @@ fn position<T>(
     rows.iter().position(|row| key(row) == id)
 }
 
-const TRACKS: usize = 14;
+const TRACKS: usize = 13;
 
 fn slot_index(slot: Slot) -> usize {
     match slot {
@@ -2980,7 +2743,6 @@ fn slot_index(slot: Slot) -> usize {
         Slot::ServerList => 10,
         Slot::Write => 11,
         Slot::Catalog => 12,
-        Slot::Usage => 13,
     }
 }
 
@@ -3778,12 +3540,9 @@ mod tests {
     }
 
     #[test]
-    fn delete_server_asks_for_the_hostname_then_confirms() {
+    fn delete_server_asks_for_the_hostname_then_sends() {
         let mut app = servers(&[1001]);
         app.servers[0].fqdn = "web-01.example".into();
-        app.servers[0].package = Some("VR4x1x25".into());
-        app.servers[0].plan_id = Some(42);
-        app.servers[0].pkg_id = Some(9);
         app.focus = Focus::Action(Action::DeleteServer);
         app.activate_focused();
         let prompt = app.prompt.as_ref().expect("hostname");
@@ -3806,111 +3565,13 @@ mod tests {
             app.type_char(ch);
         }
         app.activate_focused();
-        let prompt = app.prompt.as_ref().expect("cancel type");
-        assert_eq!(prompt.fields.len(), 1);
-        assert_eq!(prompt.fields[0].label, "cancel type");
-        assert!(!prompt.fields[0].is_text());
-        match &prompt.fields[0].kind {
-            FieldKind::Choice {
-                options,
-                picked,
-                phase,
-            } => {
-                assert_eq!(*phase, ChoicePhase::Ready);
-                assert!(picked.is_none());
-                let values = options
-                    .iter()
-                    .map(|choice| choice.value.as_str())
-                    .collect::<Vec<_>>();
-                assert_eq!(
-                    values,
-                    [super::CANCEL_IMMEDIATE, super::CANCEL_END_OF_CYCLE]
-                );
-            }
-            other => panic!("expected a cancel type radio, got {other:?}"),
-        }
-        app.activate_focused();
-        let prompt = app.prompt.as_ref().expect("stays on the radio");
-        assert!(prompt.hint.contains("required"), "{}", prompt.hint);
-        assert_eq!(prompt.fields[0].label, "cancel type");
-        assert!(app.pending.is_empty());
-
-        assert!(app.nudge_choice(1));
-        assert_eq!(
-            app.prompt.as_ref().unwrap().fields[0].value,
-            super::CANCEL_IMMEDIATE
-        );
-        app.activate_focused();
-        let prompt = app.prompt.as_ref().expect("confirm");
-        assert_eq!(prompt.title, "Confirm cancellation");
-        assert_eq!(prompt.submit_label, "Confirm cancellation");
-        assert!(prompt.fields.is_empty());
-        assert!(prompt.hint.contains("1001"), "{}", prompt.hint);
-        assert!(app.pending.is_empty());
-        app.activate_focused();
-        let token = match app.drain_requests().as_slice() {
-            [Request::UsageContract(token)] => *token,
-            other => panic!("expected a usage contract get, got {other:?}"),
-        };
-        assert!(
-            app.prompt.as_ref().is_some_and(|prompt| {
-                prompt.title == "Confirm cancellation"
-            })
-        );
-        app.apply(Reply::UsageContract {
-            token,
-            result: Err("id is missing".into()),
-        });
-        let prompt = app.prompt.as_ref().expect("dialog stays open");
-        assert_eq!(prompt.title, "Confirm cancellation");
-        assert!(prompt.hint.contains("id is missing"), "{}", prompt.hint);
-        assert!(
-            app.pending
-                .iter()
-                .all(|request| !matches!(request, Request::Write { .. }))
-        );
-
-        app.activate_focused();
-        let token = match app.drain_requests().as_slice() {
-            [Request::UsageContract(token)] => *token,
-            other => {
-                panic!("expected another usage contract get, got {other:?}")
-            }
-        };
-        app.apply(Reply::UsageContract {
-            token,
-            result: Ok(UsageBilling {
-                contract_type: "usage".into(),
-                id: "7".into(),
-            }),
-        });
         match app.pending.as_slice() {
-            [
-                Request::Write {
-                    op:
-                        WriteOp::DeleteServer {
-                            mbpkgid,
-                            fqdn,
-                            cancel_type,
-                            contract_id,
-                            package,
-                            plan_id,
-                            pkg_id,
-                            host,
-                        },
-                    ..
-                },
-            ] => {
+            [Request::Write {
+                op: WriteOp::DeleteServer { mbpkgid, fqdn },
+                ..
+            }] => {
                 assert_eq!(*mbpkgid, 1001);
                 assert_eq!(fqdn, "web-01.example");
-                assert_eq!(cancel_type, super::CANCEL_IMMEDIATE);
-                assert_eq!(*contract_id, 7);
-                assert_eq!(package.as_deref(), Some("VR4x1x25"));
-                assert_eq!(*plan_id, Some(42));
-                assert_eq!(*pkg_id, Some(9));
-                assert!(host.is_none());
-                assert_ne!(*contract_id, i64::from(*mbpkgid));
-                assert_ne!(*plan_id, Some(*mbpkgid));
             }
             other => panic!("expected a server delete, got {other:?}"),
         }
@@ -3918,61 +3579,26 @@ mod tests {
     }
 
     #[test]
-    fn delete_uses_the_loaded_usage_contract() {
+    fn delete_does_not_wait_for_a_usage_contract() {
         let mut app = servers(&[1001]);
         app.servers[0].fqdn = "web-01.example".into();
-        app.focus = Focus::Action(Action::CreateServer);
-        app.activate_focused();
-        let token = match app.drain_requests().as_slice() {
-            [Request::Catalog(token)] => *token,
-            other => panic!("expected a catalog request, got {other:?}"),
-        };
-        let mut choices = sample_choices();
-        choices.billing = Some(UsageBilling {
+        app.usage_billing = Some(UsageBilling {
             contract_type: "usage".into(),
             id: "21".into(),
         });
-        app.apply(Reply::Catalog {
-            token,
-            result: Ok(choices),
-        });
-        app.cancel_popup();
         app.focus = Focus::Action(Action::DeleteServer);
         app.activate_focused();
         for ch in "web-01.example".chars() {
             app.type_char(ch);
         }
         app.activate_focused();
-        assert!(app.nudge_choice(1));
-        assert!(app.nudge_choice(1));
-        app.activate_focused();
-        app.activate_focused();
         match app.pending.as_slice() {
-            [
-                Request::Write {
-                    op:
-                        WriteOp::DeleteServer {
-                            mbpkgid,
-                            fqdn,
-                            cancel_type,
-                            contract_id,
-                            package,
-                            plan_id,
-                            pkg_id,
-                            host,
-                        },
-                    ..
-                },
-            ] => {
+            [Request::Write {
+                op: WriteOp::DeleteServer { mbpkgid, fqdn },
+                ..
+            }] => {
                 assert_eq!(*mbpkgid, 1001);
                 assert_eq!(fqdn, "web-01.example");
-                assert_eq!(cancel_type, super::CANCEL_END_OF_CYCLE);
-                assert_eq!(*contract_id, 21);
-                assert!(package.is_none());
-                assert!(plan_id.is_none());
-                assert!(pkg_id.is_none());
-                assert!(host.is_none());
-                assert_ne!(contract_id.to_string(), mbpkgid.to_string());
             }
             other => panic!("expected a server delete, got {other:?}"),
         }

@@ -23,6 +23,7 @@ use crate::{EndpointGetAll, EndpointGetOne, EndpointWrite};
 #[getone(path = "cloud/server?mbpkgid={}", mbpkgid: u32)]
 #[write(post, form, name = "buy", path = "cloud/server/buy_build", body: ServerBuildRequest, returns = ServerBuild)]
 #[write(post, form, name = "rebuild", path = "cloud/server/build/{}", id: u32, body: ServerBuildRequest, returns = ServerBuild)]
+// `DeleteServer` serializes to `{}`.
 #[write(post, name = "delete", path = "cloud/server/{}/delete", mbpkgid: u32, body: DeleteServer, returns = DeletedServer)]
 #[write(post, form, name = "unlink", path = "cloud/server/{}/unlink", mbpkgid: u32, returns = ())]
 #[write(post, name = "start", path = "cloud/server/{}/start", mbpkgid: u32, body: ServerPower, returns = serde_json::Value)]
@@ -215,15 +216,9 @@ pub struct ServerBuildRequest {
     pub vpc_id: Option<i64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct DeleteServer {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cancel_billing: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub force_password: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub password: Option<String>,
-}
+/// `POST cloud/server/{mbpkgid}/delete`. The body is `{}`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DeleteServer {}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DeletedServer {
@@ -336,13 +331,10 @@ mod tests {
     }
 
     #[test]
-    fn delete_server_omits_unset_fields() {
-        let body = DeleteServer {
-            cancel_billing: None,
-            force_password: None,
-            password: None,
-        };
-        let value = serde_json::to_value(&body).unwrap();
+    fn delete_server_body_is_empty() {
+        let value = serde_json::to_value(DeleteServer::default()).unwrap();
         assert_eq!(value, json!({}));
+        let parsed: DeleteServer = serde_json::from_value(value).unwrap();
+        assert_eq!(parsed, DeleteServer::default());
     }
 }

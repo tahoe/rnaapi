@@ -7,8 +7,8 @@ use std::sync::Arc;
 use rnaapi::NaClient;
 use rnaapi::endpoints::{
     ContractUsage, DedicatedAction, DeleteServer, Details, IPv4, IPv6, Image,
-    Invoices, Location, MetalServer, MonthlyBw, Package, Plan, Record,
-    RecordBody, RecordUpdate, SSHKeys, Server, ServerBuild, ServerBuildRequest,
+    Invoices, Location, MetalServer, MonthlyBw, Plan, Record, RecordBody,
+    RecordUpdate, SSHKeys, Server, ServerBuild, ServerBuildRequest,
     ServerPower, Sizes, SrvJob, SrvStatus, SshKeyBody, Zone, ZoneBody,
 };
 use serde_json::Value;
@@ -95,10 +95,6 @@ async fn perform(client: &NaClient, request: Request) -> Reply {
         Request::Catalog(token) => Reply::Catalog {
             token,
             result: Ok(load_catalog(client).await),
-        },
-        Request::UsageContract(token) => Reply::UsageContract {
-            token,
-            result: load_usage_contract(client).await,
         },
         Request::Write { token, op } => Reply::Write {
             token,
@@ -509,8 +505,9 @@ async fn run_write(client: &NaClient, op: WriteOp) -> Result<String, String> {
                     .map_err(|err| err.to_string())?;
             Ok(server_build_line("server rebuilt", Some(&fqdn), &created))
         }
-        WriteOp::DeleteServer { mbpkgid, fqdn, .. } => {
-            Package::cancel(client, &restored_delete_body())
+        WriteOp::DeleteServer { mbpkgid, fqdn } => {
+            let body = DeleteServer::default();
+            Server::delete(client, mbpkgid, &body)
                 .await
                 .map_err(|err| err.to_string())?;
             Ok(format!("server deleted: {fqdn} mbpkgid {mbpkgid}"))
@@ -703,22 +700,6 @@ fn omitted(message: &str) -> (Option<UsageBilling>, Option<String>) {
     (None, Some(message.to_string()))
 }
 
-async fn load_usage_contract(
-    client: &NaClient,
-) -> Result<UsageBilling, String> {
-    usage_for_delete(ContractUsage::get(client).await)
-}
-
-fn usage_for_delete(
-    result: Result<ContractUsage, rnaapi::errors::NaApiError>,
-) -> Result<UsageBilling, String> {
-    let (billing, note) = billing_from_contract_get(result);
-    match billing {
-        Some(billing) => Ok(billing),
-        None => Err(note.unwrap_or_else(|| "id is missing".to_string())),
-    }
-}
-
 fn listed<T>(
     result: Result<Vec<T>, rnaapi::errors::NaApiError>,
     choice: impl Fn(&T) -> Choice,
@@ -804,15 +785,6 @@ fn key_choice(key: &SSHKeys) -> Choice {
     Choice {
         label,
         value: key.id.to_string(),
-    }
-}
-
-/// Earlier `DeleteServer`: the three optional fields stay unset, so the JSON is `{}`.
-fn restored_delete_body() -> DeleteServer {
-    DeleteServer {
-        cancel_billing: None,
-        force_password: None,
-        password: None,
     }
 }
 
@@ -1122,7 +1094,7 @@ fn fallback(value: &str, default: &str) -> String {
     }
 }
 
-/// Plan name from the server list. Blank text is omitted from the delete body.
+/// Plan name from the server list. Blank text is omitted.
 fn plan_name(value: Option<&str>) -> Option<String> {
     let text = value?.trim();
     if text.is_empty() {
@@ -1283,40 +1255,9 @@ mod tests {
     }
 
     #[test]
-    fn a_server_delete_posts_the_body_that_removed_a_server() {
-        let value = serde_json::to_value(super::restored_delete_body()).unwrap();
+    fn a_server_delete_body_is_empty() {
+        let value = serde_json::to_value(DeleteServer::default()).unwrap();
         assert_eq!(value, serde_json::json!({}));
-        for absent in [
-            "cancel_type",
-            "agree",
-            "contract_id",
-            "mbpkgid",
-            "package",
-            "fqdn",
-            "domU_package",
-            "pkg_id",
-            "plan_id",
-            "comments",
-        ] {
-            assert!(value.get(absent).is_none(), "{absent} {value}");
-        }
-    }
-
-    #[test]
-    fn a_missing_usage_id_does_not_become_a_delete_contract() {
-        let missing = super::usage_for_delete(Ok(contract(
-            None,
-            Some("usage"),
-            Some(1),
-            Some(40),
-        )));
-        let message = missing.expect_err("id is required");
-        assert_eq!(message, "id is missing");
-        assert!(!message.contains("40"));
-        let failed = super::usage_for_delete(Err(
-            rnaapi::errors::NaApiError::Api("connection failed".into()),
-        ));
-        assert_eq!(failed.expect_err("get failed"), "connection failed");
     }
 
     #[test]
