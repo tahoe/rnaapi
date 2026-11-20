@@ -3,8 +3,9 @@
 // under the GNU General Public License v3.0
 
 use crate::focus::{
-    Action, DetailControl, Focus, PopupFocus, PromptFocus, ServerPane, Slot,
-    Split, Tab, order, starting_focus, step, step_popup, step_prompt,
+    Action, Aim, DetailControl, Focus, PopupFocus, PromptFocus, Screen,
+    ServerPane, Slot, Split, Tab, Target, neighbor, order, page_neighbor,
+    starting_focus, step, step_popup, step_prompt,
 };
 
 /// List tokens store the selection generation. Detail tokens store the row id.
@@ -914,6 +915,63 @@ impl App {
         let items =
             order(self.tab, self.row_count(), self.selected_index().is_some());
         self.focus = step(&items, self.focus, backward);
+    }
+
+    /// Move the outline. On the page, tabs are one row and the two panes are
+    /// the next. A popup still moves by the painted hit boxes.
+    pub fn move_aim(&mut self, screen: &Screen, aim: Aim) {
+        let Some(current) = self.aim_target() else {
+            return;
+        };
+        let next = if self.modal() == crate::focus::Modal::None {
+            page_neighbor(screen, current, aim, self.tab)
+        } else {
+            neighbor(screen, current, aim, self.modal())
+        };
+        if let Some(next) = next {
+            self.place_aim(next);
+        }
+    }
+
+    fn aim_target(&self) -> Option<Target> {
+        match self.modal() {
+            crate::focus::Modal::None => match self.focus {
+                Focus::Tab(tab) => Some(Target::Tab(tab)),
+                Focus::Action(action) => Some(Target::Action(action)),
+                Focus::Row(index) => Some(Target::Row(index)),
+                Focus::Detail(control) => Some(Target::Detail(control)),
+                Focus::ServerPane(pane) => Some(Target::ServerPane(pane)),
+                Focus::Split(_) => None,
+            },
+            crate::focus::Modal::Power => {
+                self.power.as_ref().map(|popup| Target::Power(popup.focus))
+            }
+            crate::focus::Modal::Prompt => self
+                .prompt
+                .as_ref()
+                .map(|popup| Target::Prompt(popup.focus)),
+        }
+    }
+
+    fn place_aim(&mut self, target: Target) {
+        self.leave_startup_outline();
+        match target {
+            Target::Tab(tab) => self.focus = Focus::Tab(tab),
+            Target::Action(action) => self.focus = Focus::Action(action),
+            Target::Row(index) => self.focus = Focus::Row(index),
+            Target::Detail(control) => self.focus = Focus::Detail(control),
+            Target::ServerPane(pane) => self.focus = Focus::ServerPane(pane),
+            Target::Power(focus) => {
+                if let Some(popup) = self.power.as_mut() {
+                    popup.focus = focus;
+                }
+            }
+            Target::Prompt(focus) => {
+                if let Some(popup) = self.prompt.as_mut() {
+                    popup.focus = focus;
+                }
+            }
+        }
     }
 
     /// Outline a divider without inserting it into the Tab cycle.

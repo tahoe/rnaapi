@@ -600,12 +600,243 @@ pub fn target_at(
     screen: &Screen, column: u16, row: u16, modal: Modal,
 ) -> Option<Target> {
     let point = Position::new(column, row);
-    screen.hits.iter().rev().find_map(|hit| {
+    let mut best: Option<&Hit> = None;
+    for hit in &screen.hits {
         if !hit.area.contains(point) || !target_allowed(modal, hit.target) {
-            return None;
+            continue;
         }
-        Some(hit.target)
-    })
+        best = Some(match best {
+            None => hit,
+            Some(prev) if tighter(hit, prev, point) => hit,
+            Some(prev) => prev,
+        });
+    }
+    best.map(|hit| hit.target)
+}
+
+/// The control under the point. A smaller target wins over a pane that also
+/// contains it. Equal targets prefer the one whose center is closer.
+fn tighter(hit: &Hit, prev: &Hit, point: Position) -> bool {
+    let next = area_span(hit.area);
+    let old = area_span(prev.area);
+    next < old || (next == old && center_delta(hit.area, point) < center_delta(prev.area, point))
+}
+
+fn area_span(area: Rect) -> u32 {
+    u32::from(area.width).saturating_mul(u32::from(area.height))
+}
+
+fn center_delta(area: Rect, point: Position) -> u32 {
+    let cx = u32::from(area.x) + u32::from(area.width) / 2;
+    let cy = u32::from(area.y) + u32::from(area.height) / 2;
+    cx.abs_diff(u32::from(point.x)) + cy.abs_diff(u32::from(point.y))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Aim {
+    Left,
+    Down,
+    Up,
+    Right,
+}
+
+/// Vim movement across the page.
+///
+/// The main tabs are one row: `h` and `l` stay on them. `j` from a tab enters
+/// the left pane. `l` from the left pane enters the right pane's buttons, and
+/// `l` then walks those buttons left to right. `h` on the leftmost of them
+/// returns to the left pane. `j` from a right-pane button drops to the tab
+/// row under it, where `h` and `l` move again. `k` from the top of a pane
+/// returns to the open main tab. Inside the left pane, `j` and `k` walk that
+/// pane's buttons and list.
+pub fn page_neighbor(
+    screen: &Screen, current: Target, aim: Aim, open_tab: Tab,
+) -> Option<Target> {
+    let here = band(current, open_tab)?;
+    match (here, aim) {
+        (Band::Tabs, Aim::Left | Aim::Right) => step_tabs(screen, current, aim),
+        (Band::Tabs, Aim::Down) => first_in(screen, Band::Left, open_tab),
+        (Band::Tabs, Aim::Up) => None,
+        (Band::Left, Aim::Right) => first_in(screen, Band::Right, open_tab),
+        (Band::Left, Aim::Left) => None,
+        (Band::Left, Aim::Down) => {
+            step_inside(screen, current, Band::Left, open_tab, true)
+        }
+        (Band::Left, Aim::Up) => {
+            step_inside(screen, current, Band::Left, open_tab, false)
+                .or(Some(Target::Tab(open_tab)))
+        }
+        (Band::Right, Aim::Right) => {
+            step_inside(screen, current, Band::Right, open_tab, true)
+        }
+        (Band::Right, Aim::Left) => {
+            step_inside(screen, current, Band::Right, open_tab, false)
+                .or_else(|| first_in(screen, Band::Left, open_tab))
+        }
+        (Band::Right, Aim::Down) => first_in(screen, Band::Subtabs, open_tab),
+        (Band::Right, Aim::Up) => Some(Target::Tab(open_tab)),
+        (Band::Subtabs, Aim::Left | Aim::Right) => {
+            step_inside(screen, current, Band::Subtabs, open_tab, aim == Aim::Right)
+        }
+        (Band::Subtabs, Aim::Up) => first_in(screen, Band::Right, open_tab)
+            .or(Some(Target::Tab(open_tab))),
+        (Band::Subtabs, Aim::Down) => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Band {
+    Tabs,
+    Left,
+    Right,
+    /// The tab row under the right pane's buttons.
+    Subtabs,
+}
+
+fn band(target: Target, tab: Tab) -> Option<Band> {
+    match target {
+        Target::Tab(_) => Some(Band::Tabs),
+        Target::Row(_) => Some(Band::Left),
+        Target::Detail(_) => Some(Band::Right),
+        Target::ServerPane(_) => Some(Band::Subtabs),
+        Target::Action(action) if action.is_left(tab) => Some(Band::Left),
+        Target::Action(action) if action.is_right(tab) => Some(Band::Right),
+        Target::Action(_) | Target::Power(_) | Target::Prompt(_) => None,
+    }
+}
+
+fn step_tabs(screen: &Screen, current: Target, aim: Aim) -> Option<Target> {
+    let mut tabs: Vec<&Hit> = screen
+        .hits
+        .iter()
+        .filter(|hit| matches!(hit.target, Target::Tab(_)))
+        .collect();
+    tabs.sort_by_key(|hit| hit.area.x);
+    let index = tabs.iter().position(|hit| hit.target == current)?;
+    let next = match aim {
+        Aim::Left => index.checked_sub(1)?,
+        Aim::Right => index.saturating_add(1),
+        Aim::Up | Aim::Down => return None,
+    };
+    tabs.get(next).map(|hit| hit.target)
+}
+
+fn first_in(screen: &Screen, band: Band, tab: Tab) -> Option<Target> {
+    ordered(screen, band, tab).first().map(|hit| hit.target)
+}
+
+fn step_inside(
+    screen: &Screen, current: Target, band: Band, tab: Tab, down: bool,
+) -> Option<Target> {
+    let hits = ordered(screen, band, tab);
+    let index = hits.iter().position(|hit| hit.target == current)?;
+    let next = if down { index.checked_add(1)? } else { index.checked_sub(1)? };
+    hits.get(next).map(|hit| hit.target)
+}
+
+fn ordered<'a>(screen: &'a Screen, band: Band, tab: Tab) -> Vec<&'a Hit> {
+    let mut hits: Vec<&Hit> = screen
+        .hits
+        .iter()
+        .filter(|hit| self::band(hit.target, tab) == Some(band))
+        .collect();
+    hits.sort_by_key(|hit| (hit.area.y, hit.area.x));
+    hits
+}
+
+/// The next outline in `aim`, using the painted hit boxes. Popup controls
+/// still move this way. The page uses [`page_neighbor`].
+pub fn neighbor(
+    screen: &Screen, current: Target, aim: Aim, modal: Modal,
+) -> Option<Target> {
+    let origin = screen.hits.iter().find(|hit| hit.target == current)?.area;
+    let mut best: Option<(u8, u32, u32, Target)> = None;
+    for hit in &screen.hits {
+        if hit.target == current
+            || hit.area.width == 0
+            || hit.area.height == 0
+            || !target_allowed(modal, hit.target)
+        {
+            continue;
+        }
+        let Some((primary, cross, aligned)) = aim_delta(origin, hit.area, aim)
+        else {
+            continue;
+        };
+        let rank = u8::from(!aligned);
+        let better = match best {
+            None => true,
+            Some((old_rank, old_primary, old_cross, _)) => {
+                (rank, primary, cross) < (old_rank, old_primary, old_cross)
+            }
+        };
+        if better {
+            best = Some((rank, primary, cross, hit.target));
+        }
+    }
+    best.map(|(_, _, _, target)| target)
+}
+
+fn aim_delta(origin: Rect, next: Rect, aim: Aim) -> Option<(u32, u32, bool)> {
+    let (primary, cross, aligned) = match aim {
+        Aim::Left => {
+            if next.right() > origin.x {
+                return None;
+            }
+            (
+                u32::from(origin.x.saturating_sub(next.right())),
+                cross_delta(center_y(origin), center_y(next)),
+                ranges_overlap(origin.y, origin.bottom(), next.y, next.bottom()),
+            )
+        }
+        Aim::Right => {
+            if next.x < origin.right() {
+                return None;
+            }
+            (
+                u32::from(next.x.saturating_sub(origin.right())),
+                cross_delta(center_y(origin), center_y(next)),
+                ranges_overlap(origin.y, origin.bottom(), next.y, next.bottom()),
+            )
+        }
+        Aim::Up => {
+            if next.bottom() > origin.y {
+                return None;
+            }
+            (
+                u32::from(origin.y.saturating_sub(next.bottom())),
+                cross_delta(center_x(origin), center_x(next)),
+                ranges_overlap(origin.x, origin.right(), next.x, next.right()),
+            )
+        }
+        Aim::Down => {
+            if next.y < origin.bottom() {
+                return None;
+            }
+            (
+                u32::from(next.y.saturating_sub(origin.bottom())),
+                cross_delta(center_x(origin), center_x(next)),
+                ranges_overlap(origin.x, origin.right(), next.x, next.right()),
+            )
+        }
+    };
+    Some((primary, cross, aligned))
+}
+
+fn center_x(area: Rect) -> u32 {
+    u32::from(area.x) + u32::from(area.width) / 2
+}
+
+fn center_y(area: Rect) -> u32 {
+    u32::from(area.y) + u32::from(area.height) / 2
+}
+
+fn cross_delta(origin: u32, next: u32) -> u32 {
+    origin.abs_diff(next)
+}
+
+fn ranges_overlap(a0: u16, a1: u16, b0: u16, b1: u16) -> bool {
+    a0 < b1 && b0 < a1
 }
 
 fn target_allowed(modal: Modal, target: Target) -> bool {

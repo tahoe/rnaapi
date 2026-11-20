@@ -170,24 +170,31 @@ fn command(app: &App, label: &'static str, target: Target) -> Command {
     }
 }
 
-/// One line of buttons at the top of a pane. Returns the rows it used.
+/// Buttons inside a pane. One blank row separates them from the frame above
+/// and from the list or detail below. Returns the rows those pieces use.
 fn paint_command_row(
     frame: &mut Frame<'_>, area: Rect, screen: &mut Screen,
     commands: &[Command],
 ) -> u16 {
-    if commands.is_empty() || area.height == 0 || area.width == 0 {
+    const GAP: u16 = 1;
+    if commands.is_empty() || area.height < GAP + 1 || area.width == 0 {
         return 0;
     }
     let mut x = area.x;
-    let mut y = area.y;
+    let mut y = area.y.saturating_add(GAP);
+    let floor = area.bottom().saturating_sub(GAP);
+    if y >= floor {
+        return 0;
+    }
     let mut rows = 1u16;
     for command in commands {
         let width = button_width(command.label);
         if x != area.x && x.saturating_add(width) > area.right() {
-            y = y.saturating_add(1);
-            if y >= area.bottom() {
+            let next = y.saturating_add(1);
+            if next >= floor {
                 break;
             }
+            y = next;
             x = area.x;
             rows = rows.saturating_add(1);
         }
@@ -201,9 +208,10 @@ fn paint_command_row(
             height: 1,
         };
         paint_command(frame, screen, rect, command);
-        x = x.saturating_add(width).saturating_add(1);
+        // Two empty columns so a click on the edge of one button misses the next.
+        x = x.saturating_add(width).saturating_add(2);
     }
-    rows
+    rows.saturating_add(GAP).saturating_add(GAP)
 }
 
 /// A one-line control. Green and bold when it is the outline.
@@ -1695,6 +1703,7 @@ fn tail(text: &str, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::focus::{Aim, target_at};
     use crate::model::{PowerVerb, ServerKind, ServerRow};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -2061,15 +2070,27 @@ mod tests {
         let create = hit(&screen, Target::Action(Action::CreateServer));
         assert!(screen.list.y > create.y, "create sits above the list rows");
         assert!(create.x < screen.columns_split.x);
+        assert!(
+            create.y >= screen.body.y.saturating_add(2),
+            "a blank row sits under the frame"
+        );
         let header = hit_line(&buffer, "mbpkgid");
-        assert!(create.y < header);
+        assert!(header >= create.y.saturating_add(2), "a blank row sits under the button");
         let on = hit(&screen, Target::Detail(DetailControl::On));
         let rebuild = hit(&screen, Target::Action(Action::RebuildServer));
         let delete = hit(&screen, Target::Action(Action::DeleteServer));
         let cancel = hit(&screen, Target::Action(Action::CancelServer));
+        assert!(
+            on.y >= screen.body.y.saturating_add(2),
+            "detail buttons sit below the frame"
+        );
         assert!(on.x > screen.columns_split.x);
         assert!(rebuild.x > on.x);
-        assert!(delete.x > rebuild.x);
+        if delete.y == rebuild.y {
+            assert!(delete.x > rebuild.x);
+        } else {
+            assert!(delete.y > rebuild.y);
+        }
         if cancel.y == delete.y {
             assert!(cancel.x > delete.x);
         } else {
@@ -2168,6 +2189,75 @@ mod tests {
                 "{tab:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_click_hits_the_button_under_the_cursor() {
+        let mut app = sample();
+        let mut screen = Screen::default();
+        let _ = draw(&mut app, &mut screen);
+        let on = hit(&screen, Target::Detail(DetailControl::On));
+        let off = hit(&screen, Target::Detail(DetailControl::Off));
+        let mid = on.x + on.width / 2;
+        assert_eq!(
+            target_at(&screen, mid, on.y, Modal::None),
+            Some(Target::Detail(DetailControl::On))
+        );
+        if off.y == on.y {
+            assert!(off.x >= on.right().saturating_add(2));
+            assert_eq!(target_at(&screen, on.right(), on.y, Modal::None), None);
+            assert_eq!(
+                target_at(&screen, off.x + off.width / 2, off.y, Modal::None),
+                Some(Target::Detail(DetailControl::Off))
+            );
+        }
+    }
+
+    #[test]
+    fn vim_movement_stays_on_the_tab_row_then_the_panes() {
+        let mut app = sample();
+        app.focus = Focus::Tab(Tab::Servers);
+        let mut screen = Screen::default();
+        let _ = draw(&mut app, &mut screen);
+
+        app.move_aim(&screen, Aim::Right);
+        assert_eq!(app.focus, Focus::Tab(Tab::SshKeys));
+        app.move_aim(&screen, Aim::Left);
+        assert_eq!(app.focus, Focus::Tab(Tab::Servers));
+        app.move_aim(&screen, Aim::Left);
+        assert_eq!(app.focus, Focus::Tab(Tab::Servers));
+
+        app.move_aim(&screen, Aim::Down);
+        assert_eq!(app.focus, Focus::Action(Action::CreateServer));
+        app.move_aim(&screen, Aim::Up);
+        assert_eq!(app.focus, Focus::Tab(Tab::Servers));
+
+        app.move_aim(&screen, Aim::Down);
+        app.move_aim(&screen, Aim::Right);
+        assert_eq!(app.focus, Focus::Detail(DetailControl::On));
+        app.move_aim(&screen, Aim::Left);
+        assert_eq!(app.focus, Focus::Action(Action::CreateServer));
+
+        app.move_aim(&screen, Aim::Down);
+        assert_eq!(app.focus, Focus::Row(0));
+        app.move_aim(&screen, Aim::Up);
+        assert_eq!(app.focus, Focus::Action(Action::CreateServer));
+
+        app.move_aim(&screen, Aim::Right);
+        app.move_aim(&screen, Aim::Right);
+        assert_eq!(app.focus, Focus::Detail(DetailControl::Off));
+        app.move_aim(&screen, Aim::Left);
+        assert_eq!(app.focus, Focus::Detail(DetailControl::On));
+        app.move_aim(&screen, Aim::Down);
+        assert_eq!(app.focus, Focus::ServerPane(ServerPane::Jobs));
+        app.move_aim(&screen, Aim::Right);
+        assert_eq!(app.focus, Focus::ServerPane(ServerPane::Address));
+        app.move_aim(&screen, Aim::Left);
+        assert_eq!(app.focus, Focus::ServerPane(ServerPane::Jobs));
+        app.move_aim(&screen, Aim::Up);
+        assert_eq!(app.focus, Focus::Detail(DetailControl::On));
+        app.move_aim(&screen, Aim::Up);
+        assert_eq!(app.focus, Focus::Tab(Tab::Servers));
     }
 
     fn hit(screen: &Screen, target: Target) -> ratatui::layout::Rect {

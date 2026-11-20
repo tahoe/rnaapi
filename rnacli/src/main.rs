@@ -7,12 +7,14 @@
 //! ```
 //!
 //! ```text
-//! rnacli get server
-//! rnacli get server -m <mbpkgid>
-//! rnacli power-virt off -m <mbpkgid>
-//! rnacli power-ded off -m <mbpkgid>
-//! rnacli terminate -m <mbpkgid>
-//! rnacli cancel -m <mbpkgid> --cancel-type Immediate --agree
+//! rnacli server get
+//! rnacli server get -m <mbpkgid>
+//! rnacli server off -m <mbpkgid>
+//! rnacli dedicated off -m <mbpkgid>
+//! rnacli server terminate -m <mbpkgid>
+//! rnacli server cancel -m <mbpkgid> --cancel-type Immediate --agree
+//! rnacli server build --fqdn <name> --plan <plan> --location <id> --image <id>
+//! rnacli server rebuild -m <mbpkgid> --image <id>
 //! ```
 //!
 // Copyright (C) 2025 Dennis Durling
@@ -28,7 +30,10 @@ use rnaapi::endpoints::{self, MonthlyBw};
 use rnacli::commands::get_pub_key;
 use rnacli::commands::new_ssh_key;
 use rnacli::commands::{
-    Cli, Commands, GetCommands, NewCommands, PowerCommands,
+    AccountCommands, BandwidthCommands, BuildArgs, Cli, Commands,
+    DedicatedCommands, DnsCommands, ImageCommands, InvoiceCommands, IpCommands,
+    JobCommands, LocationCommands, PowerTarget, PubkeyCommands, RebuildArgs,
+    ServerCommands, SizesCommands, SshCommands,
 };
 
 #[tokio::main]
@@ -41,33 +46,30 @@ async fn main() -> Result<()> {
             generate(shell, &mut app, name, &mut std::io::stdout());
             Ok(())
         }
-        Some(Commands::Get { cmd }) => match cmd {
-            GetCommands::Pubkey { file } => {
-                let pubkey = get_pub_key(&file)?;
-                println!("PubKey for {file} is: {pubkey}");
-                Ok(())
-            }
-            other => dispatch(other).await,
-        },
-        Some(Commands::New { cmd }) => match cmd {
-            NewCommands::Ssh { file } => create_ssh(file).await,
-        },
-        Some(Commands::PowerVirt { cmd }) => power_virt(cmd).await,
-        Some(Commands::PowerDed { cmd }) => power_ded(cmd).await,
-        Some(Commands::Terminate { mbpkgid }) => terminate(mbpkgid).await,
-        Some(Commands::Cancel {
-            mbpkgid,
-            cancel_type,
-            agree,
-        }) => {
-            if !agree {
-                bail!(
-                    "I understand that my server and its data will be destroyed."
-                );
-            }
-            cancel(mbpkgid, cancel_type).await
-        }
+        Some(Commands::Server { cmd }) => server(cmd).await,
+        Some(Commands::Dedicated { cmd }) => dedicated(cmd).await,
+        Some(Commands::Dns { cmd }) => dns(cmd).await,
+        Some(Commands::Ssh { cmd }) => ssh(cmd).await,
+        Some(Commands::Job { cmd }) => job(cmd).await,
+        Some(Commands::Ip { cmd }) => ip(cmd).await,
+        Some(Commands::Bandwidth { cmd }) => bandwidth(cmd).await,
+        Some(Commands::Invoice { cmd }) => invoice(cmd).await,
+        Some(Commands::Sizes { cmd }) => sizes(cmd).await,
+        Some(Commands::Location { cmd }) => location(cmd).await,
+        Some(Commands::Image { cmd }) => image(cmd).await,
+        Some(Commands::Account { cmd }) => account(cmd).await,
+        Some(Commands::Pubkey { cmd }) => pubkey(cmd),
         None => Ok(()),
+    }
+}
+
+fn pubkey(cmd: PubkeyCommands) -> Result<()> {
+    match cmd {
+        PubkeyCommands::Get { file } => {
+            let key = get_pub_key(&file)?;
+            println!("PubKey for {file} is: {key}");
+            Ok(())
+        }
     }
 }
 
@@ -94,39 +96,122 @@ async fn create_ssh(file: Option<String>) -> Result<()> {
     Ok(())
 }
 
-fn power_target(cmd: &PowerCommands) -> (u32, bool) {
-    match cmd {
-        PowerCommands::On(target)
-        | PowerCommands::Off(target)
-        | PowerCommands::Reboot(target) => (target.mbpkgid, target.force),
-    }
-}
-
 async fn power_client() -> Result<NaClient> {
     let settings = Settings::new()?;
     let client = NaClient::new(settings.api_key, settings.api_url).await?;
     Ok(client)
 }
 
-async fn power_virt(cmd: PowerCommands) -> Result<()> {
-    let (mbpkgid, force) = power_target(&cmd);
+async fn server(cmd: ServerCommands) -> Result<()> {
+    match cmd {
+        ServerCommands::Get { mbpkgid } => {
+            print_server(&api_client().await?, mbpkgid).await
+        }
+        ServerCommands::Terminate { mbpkgid } => terminate(mbpkgid).await,
+        ServerCommands::Cancel {
+            mbpkgid,
+            cancel_type,
+            agree,
+        } => {
+            if !agree {
+                bail!(
+                    "I understand that my server and its data will be destroyed."
+                );
+            }
+            cancel(mbpkgid, cancel_type).await
+        }
+        ServerCommands::Build(args) => server_build(args).await,
+        ServerCommands::Rebuild(args) => server_rebuild(args).await,
+        ServerCommands::On(target) => {
+            cloud_power(target, CloudPower::On).await
+        }
+        ServerCommands::Off(target) => {
+            cloud_power(target, CloudPower::Off).await
+        }
+        ServerCommands::Reboot(target) => {
+            cloud_power(target, CloudPower::Reboot).await
+        }
+    }
+}
+
+enum CloudPower {
+    On,
+    Off,
+    Reboot,
+}
+
+async fn cloud_power(target: PowerTarget, verb: CloudPower) -> Result<()> {
+    let PowerTarget { mbpkgid, force } = target;
     require_id("mbpkgid", mbpkgid)?;
     let na_client = power_client().await?;
     let body = endpoints::ServerPower {
         force: force.then_some(true),
     };
-    let result = match cmd {
-        PowerCommands::On(_) => {
+    let result = match verb {
+        CloudPower::On => {
             endpoints::Server::start(&na_client, mbpkgid, &body).await?
         }
-        PowerCommands::Off(_) => {
+        CloudPower::Off => {
             endpoints::Server::shutdown(&na_client, mbpkgid, &body).await?
         }
-        PowerCommands::Reboot(_) => {
+        CloudPower::Reboot => {
             endpoints::Server::reboot(&na_client, mbpkgid, &body).await?
         }
     };
     println!("{result}");
+    Ok(())
+}
+
+fn build_body(args: &BuildArgs) -> endpoints::ServerBuildRequest {
+    endpoints::ServerBuildRequest {
+        plan: args.plan.clone(),
+        location: args.location,
+        image: args.image,
+        fqdn: args.fqdn.clone(),
+        ssh_key: args.ssh_key.clone(),
+        ssh_key_id: args.ssh_key_id,
+        password: args.password.clone(),
+        package_billing: args.package_billing.clone(),
+        package_billing_contract_id: args.package_billing_contract_id.clone(),
+        cloud_config: args.cloud_config.clone(),
+        script_content: args.script_content.clone(),
+        script_type: args.script_type.clone(),
+        params: args.params.clone(),
+        tag: args.tag.clone(),
+        tag_list: (!args.tag_list.is_empty()).then(|| args.tag_list.clone()),
+        cloud_pool_id: args.cloud_pool_id,
+        vpc_id: args.vpc_id,
+    }
+}
+
+async fn server_build(args: BuildArgs) -> Result<()> {
+    let na_client = power_client().await?;
+    let built =
+        endpoints::Server::buy(&na_client, &build_body(&args)).await?;
+    println!(
+        "built: {} mbpkgid {} status {}",
+        args.fqdn.unwrap_or_default(),
+        built.mbpkgid,
+        built.status
+    );
+    Ok(())
+}
+
+async fn server_rebuild(args: RebuildArgs) -> Result<()> {
+    require_id("mbpkgid", args.mbpkgid)?;
+    let na_client = power_client().await?;
+    let built = endpoints::Server::rebuild(
+        &na_client,
+        args.mbpkgid,
+        &build_body(&args.build),
+    )
+    .await?;
+    println!(
+        "rebuilt: {} mbpkgid {} status {}",
+        args.build.fqdn.unwrap_or_default(),
+        built.mbpkgid,
+        built.status
+    );
     Ok(())
 }
 
@@ -156,58 +241,109 @@ async fn cancel(mbpkgid: u32, cancel_type: String) -> Result<()> {
     Ok(())
 }
 
-async fn power_ded(cmd: PowerCommands) -> Result<()> {
-    let (mbpkgid, force) = power_target(&cmd);
+async fn dedicated(cmd: DedicatedCommands) -> Result<()> {
+    let (verb, target) = match cmd {
+        DedicatedCommands::On(target) => ("on", target),
+        DedicatedCommands::Off(target) => ("off", target),
+        DedicatedCommands::Reboot(target) => ("reboot", target),
+    };
+    let PowerTarget { mbpkgid, force } = target;
     require_id("mbpkgid", mbpkgid)?;
     let na_client = power_client().await?;
     let body = endpoints::DedicatedAction {
         force: force.then_some(true),
         password: None,
     };
-    match cmd {
-        PowerCommands::On(_) => {
+    match verb {
+        "on" => {
             endpoints::MetalServer::start(&na_client, mbpkgid, &body).await?;
-            println!("on {mbpkgid}");
         }
-        PowerCommands::Off(_) => {
+        "off" => {
             endpoints::MetalServer::shutdown(&na_client, mbpkgid, &body)
                 .await?;
-            println!("off {mbpkgid}");
         }
-        PowerCommands::Reboot(_) => {
+        _ => {
             endpoints::MetalServer::reboot(&na_client, mbpkgid, &body).await?;
-            println!("reboot {mbpkgid}");
         }
     }
+    println!("{verb} {mbpkgid}");
     Ok(())
 }
 
-async fn dispatch(cmd: GetCommands) -> Result<()> {
+async fn api_client() -> Result<NaClient> {
     let settings = Settings::new()?;
-    let na_client = NaClient::new(settings.api_key, settings.api_url).await?;
+    let client = NaClient::new(settings.api_key, settings.api_url).await?;
+    Ok(client)
+}
+
+async fn dns(cmd: DnsCommands) -> Result<()> {
     match cmd {
-        GetCommands::Pubkey { .. } => {
-            bail!("public key lookup does not use the API");
+        DnsCommands::Get { id } => print_dns(&api_client().await?, id).await,
+    }
+}
+
+async fn ssh(cmd: SshCommands) -> Result<()> {
+    match cmd {
+        SshCommands::Get { id } => print_ssh(&api_client().await?, id).await,
+        SshCommands::New { file } => create_ssh(file).await,
+    }
+}
+
+async fn job(cmd: JobCommands) -> Result<()> {
+    match cmd {
+        JobCommands::Get { mbpkgid, jobid } => {
+            print_job(&api_client().await?, mbpkgid, jobid).await
         }
-        GetCommands::Server { mbpkgid } => {
-            print_server(&na_client, mbpkgid).await
+    }
+}
+
+async fn ip(cmd: IpCommands) -> Result<()> {
+    match cmd {
+        IpCommands::Get { mbpkgid } => {
+            print_ips(&api_client().await?, mbpkgid).await
         }
-        GetCommands::Dns { id } => print_dns(&na_client, id).await,
-        GetCommands::Ssh { id } => print_ssh(&na_client, id).await,
-        GetCommands::Job { mbpkgid, jobid } => {
-            print_job(&na_client, mbpkgid, jobid).await
+    }
+}
+
+async fn bandwidth(cmd: BandwidthCommands) -> Result<()> {
+    match cmd {
+        BandwidthCommands::Get { mbpkgid } => {
+            print_bandwidth(&api_client().await?, mbpkgid).await
         }
-        GetCommands::Ip { mbpkgid } => print_ips(&na_client, mbpkgid).await,
-        GetCommands::Bandwidth { mbpkgid } => {
-            print_bandwidth(&na_client, mbpkgid).await
+    }
+}
+
+async fn invoice(cmd: InvoiceCommands) -> Result<()> {
+    match cmd {
+        InvoiceCommands::Get { count } => {
+            print_invoices(&api_client().await?, count).await
         }
-        GetCommands::Invoice { count } => {
-            print_invoices(&na_client, count).await
+    }
+}
+
+async fn sizes(cmd: SizesCommands) -> Result<()> {
+    match cmd {
+        SizesCommands::Get { id } => print_sizes(&api_client().await?, id).await,
+    }
+}
+
+async fn location(cmd: LocationCommands) -> Result<()> {
+    match cmd {
+        LocationCommands::Get { id } => {
+            print_locations(&api_client().await?, id).await
         }
-        GetCommands::Sizes { id } => print_sizes(&na_client, id).await,
-        GetCommands::Location { id } => print_locations(&na_client, id).await,
-        GetCommands::Image {} => print_images(&na_client).await,
-        GetCommands::Account {} => print_account(&na_client).await,
+    }
+}
+
+async fn image(cmd: ImageCommands) -> Result<()> {
+    match cmd {
+        ImageCommands::Get => print_images(&api_client().await?).await,
+    }
+}
+
+async fn account(cmd: AccountCommands) -> Result<()> {
+    match cmd {
+        AccountCommands::Get => print_account(&api_client().await?).await,
     }
 }
 

@@ -167,35 +167,97 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    Get {
+    /// Cloud server.
+    #[command(visible_alias = "srv")]
+    Server {
         #[command(subcommand)]
-        cmd: GetCommands,
+        cmd: ServerCommands,
     },
-    /// Create a resource.
-    New {
+    /// Dedicated server power.
+    Dedicated {
         #[command(subcommand)]
-        cmd: NewCommands,
+        cmd: DedicatedCommands,
     },
-    /// Start, stop, or reboot a virtual server.
-    PowerVirt {
+    /// DNS zones.
+    Dns {
         #[command(subcommand)]
-        cmd: PowerCommands,
+        cmd: DnsCommands,
     },
-    /// Start, stop, or reboot a dedicated server.
-    PowerDed {
+    /// Account SSH keys.
+    Ssh {
         #[command(subcommand)]
-        cmd: PowerCommands,
+        cmd: SshCommands,
+    },
+    /// Server jobs.
+    Job {
+        #[command(subcommand)]
+        cmd: JobCommands,
+    },
+    /// Server addresses.
+    Ip {
+        #[command(subcommand)]
+        cmd: IpCommands,
+    },
+    /// Monthly bandwidth.
+    #[command(visible_alias = "bw")]
+    Bandwidth {
+        #[command(subcommand)]
+        cmd: BandwidthCommands,
+    },
+    /// Invoices.
+    #[command(visible_alias = "inv")]
+    Invoice {
+        #[command(subcommand)]
+        cmd: InvoiceCommands,
+    },
+    /// Plans at a location.
+    #[command(visible_alias = "sz")]
+    Sizes {
+        #[command(subcommand)]
+        cmd: SizesCommands,
+    },
+    /// Locations.
+    #[command(visible_alias = "loc")]
+    Location {
+        #[command(subcommand)]
+        cmd: LocationCommands,
+    },
+    /// Images.
+    #[command(visible_alias = "img")]
+    Image {
+        #[command(subcommand)]
+        cmd: ImageCommands,
+    },
+    /// Account.
+    Account {
+        #[command(subcommand)]
+        cmd: AccountCommands,
+    },
+    /// A public key file under ~/.ssh.
+    Pubkey {
+        #[command(subcommand)]
+        cmd: PubkeyCommands,
     },
     /// generate completions
     #[command(visible_alias = "gen")]
     GenerateCompletions { shell: Shell },
-    /// Terminate a server.
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ServerCommands {
+    /// List servers, or one server when `-m` is set.
+    Get {
+        /// Package id. Omit to list every server.
+        #[arg(short, long)]
+        mbpkgid: Option<u32>,
+    },
+    /// Terminate a server. `POST cloud/server/delete/{mbpkgid}` with `{}`.
     Terminate {
         /// Package id.
         #[arg(short, long)]
         mbpkgid: u32,
     },
-    /// Cancel a server package.
+    /// Cancel a package. `POST cloud/package/cancel`.
     Cancel {
         /// Package id.
         #[arg(short, long)]
@@ -206,6 +268,138 @@ pub enum Commands {
         /// I understand that my server and its data will be destroyed.
         #[arg(long, required = true, action = clap::ArgAction::SetTrue)]
         agree: bool,
+    },
+    /// Build a server. `POST cloud/server/buy_build`.
+    Build(BuildArgs),
+    /// Rebuild a server. `POST cloud/server/build/{mbpkgid}`.
+    Rebuild(RebuildArgs),
+    /// Start a cloud server. `POST cloud/server/{mbpkgid}/start`.
+    #[command(visible_alias = "start")]
+    On(PowerTarget),
+    /// Shut a cloud server down. `POST cloud/server/{mbpkgid}/shutdown`.
+    #[command(visible_alias = "shutdown")]
+    Off(PowerTarget),
+    /// Reboot a cloud server. `POST cloud/server/{mbpkgid}/reboot`.
+    Reboot(PowerTarget),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DedicatedCommands {
+    /// Start a dedicated server.
+    #[command(visible_alias = "start")]
+    On(PowerTarget),
+    /// Shut a dedicated server down.
+    #[command(visible_alias = "shutdown")]
+    Off(PowerTarget),
+    /// Reboot a dedicated server.
+    Reboot(PowerTarget),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DnsCommands {
+    /// List zones, or one zone when `-i` is set.
+    Get {
+        /// Zone id. Omit to list every zone.
+        #[arg(short, long)]
+        id: Option<u32>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SshCommands {
+    /// List SSH keys, or one key when `-i` is set.
+    Get {
+        /// Key id. Omit to list every key.
+        #[arg(short, long)]
+        id: Option<u32>,
+    },
+    /// Upload an account SSH public key.
+    New {
+        /// Public key file. A bare name is read from ~/.ssh.
+        /// Omit this to generate ~/.ssh/id_ed25519 and publish its public key.
+        #[arg(short, long)]
+        file: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum JobCommands {
+    /// List jobs for a server, or one job.
+    Get {
+        #[arg(short, long)]
+        mbpkgid: u32,
+        #[arg(short, long, default_value_t = 0)]
+        jobid: u32,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum IpCommands {
+    /// List addresses for a server.
+    Get {
+        #[arg(short, long)]
+        mbpkgid: u32,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BandwidthCommands {
+    /// Monthly bandwidth for a server.
+    Get {
+        #[arg(short, long)]
+        mbpkgid: u32,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum InvoiceCommands {
+    /// Recent invoices.
+    Get {
+        /// Number of invoices to print.
+        #[arg(short, long, default_value_t = 5)]
+        count: usize,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SizesCommands {
+    /// Plans at a location.
+    Get {
+        /// Location id.
+        #[arg(short, long)]
+        id: u32,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum LocationCommands {
+    /// List locations, or one location when `-i` is set.
+    Get {
+        /// Location id. Omit to list every location.
+        #[arg(short, long)]
+        id: Option<u32>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ImageCommands {
+    /// List images.
+    Get,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AccountCommands {
+    /// Account details.
+    Get,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PubkeyCommands {
+    /// Print the first public key from a file in ~/.ssh.
+    Get {
+        /// File name under ~/.ssh.
+        #[arg(short, long, default_value = "butter_rsa.pub")]
+        file: String,
     },
 }
 
@@ -219,90 +413,6 @@ fn parse_cancel_type(raw: &str) -> Result<String, String> {
     }
 }
 
-#[derive(Subcommand, Debug)]
-pub enum GetCommands {
-    /// Server subcommands
-    #[command(visible_alias = "srv")]
-    Server {
-        /// Package id. Omit to list every server.
-        #[arg(short, long)]
-        mbpkgid: Option<u32>,
-    },
-
-    /// DNS subcommands
-    Dns {
-        /// Zone id. Omit to list every zone.
-        #[arg(short, long)]
-        id: Option<u32>,
-    },
-
-    /// SSh subcommands
-    Ssh {
-        /// Key id. Omit to list every key.
-        #[arg(short, long)]
-        id: Option<u32>,
-    },
-
-    /// Job subcommands
-    Job {
-        #[arg(short, long)]
-        mbpkgid: u32,
-        #[arg(short, long, default_value_t = 0)]
-        jobid: u32,
-    },
-
-    /// IPs subcommands
-    Ip {
-        #[arg(short, long)]
-        mbpkgid: u32,
-    },
-
-    /// Monthly Bandwidth subcommands
-    #[command(visible_alias = "bw")]
-    Bandwidth {
-        #[arg(short, long)]
-        mbpkgid: u32,
-    },
-
-    /// Invoices subcommands
-    #[command(visible_alias = "inv")]
-    Invoice {
-        /// Number of invoices to print.
-        #[arg(short, long, default_value_t = 5)]
-        count: usize,
-    },
-
-    /// Sizes subcommands
-    #[command(visible_alias = "sz")]
-    Sizes {
-        /// Location id.
-        #[arg(short, long)]
-        id: u32,
-    },
-
-    /// Location subcommands
-    #[command(visible_alias = "loc")]
-    Location {
-        /// Location id. Omit to list every location.
-        #[arg(short, long)]
-        id: Option<u32>,
-    },
-
-    /// Images subcommands
-    #[command(visible_alias = "img")]
-    Image {},
-
-    /// Account subcommands
-    Account {},
-
-    /// Print the first public key from a file in ~/.ssh.
-    Pubkey {
-        /// File name under ~/.ssh.
-        #[arg(short, long, default_value = "butter_rsa.pub")]
-        file: String,
-    },
-}
-
 #[derive(Args, Debug)]
 pub struct PowerTarget {
     /// Package id.
@@ -313,27 +423,52 @@ pub struct PowerTarget {
     pub force: bool,
 }
 
-#[derive(Subcommand, Debug)]
-pub enum PowerCommands {
-    /// Start the server.
-    #[command(visible_alias = "start")]
-    On(PowerTarget),
-    /// Shut the server down.
-    #[command(visible_alias = "shutdown")]
-    Off(PowerTarget),
-    /// Reboot the server.
-    Reboot(PowerTarget),
+/// Fields for `POST cloud/server/buy_build` and `POST cloud/server/build/{mbpkgid}`.
+#[derive(Args, Debug, Default)]
+pub struct BuildArgs {
+    #[arg(long)]
+    pub plan: Option<String>,
+    #[arg(long)]
+    pub location: Option<i64>,
+    #[arg(long)]
+    pub image: Option<i64>,
+    #[arg(long)]
+    pub fqdn: Option<String>,
+    #[arg(long)]
+    pub ssh_key: Option<String>,
+    #[arg(long)]
+    pub ssh_key_id: Option<i64>,
+    #[arg(long)]
+    pub password: Option<String>,
+    #[arg(long)]
+    pub package_billing: Option<String>,
+    #[arg(long)]
+    pub package_billing_contract_id: Option<String>,
+    #[arg(long)]
+    pub cloud_config: Option<String>,
+    #[arg(long)]
+    pub script_content: Option<String>,
+    #[arg(long)]
+    pub script_type: Option<String>,
+    #[arg(long)]
+    pub params: Option<String>,
+    #[arg(long)]
+    pub tag: Option<String>,
+    #[arg(long)]
+    pub tag_list: Vec<String>,
+    #[arg(long)]
+    pub cloud_pool_id: Option<i64>,
+    #[arg(long)]
+    pub vpc_id: Option<i64>,
 }
 
-#[derive(Subcommand, Debug)]
-pub enum NewCommands {
-    /// Upload an account SSH public key.
-    Ssh {
-        /// Public key file. A bare name is read from ~/.ssh.
-        /// Omit this to generate ~/.ssh/id_ed25519 and publish its public key.
-        #[arg(short, long)]
-        file: Option<String>,
-    },
+#[derive(Args, Debug)]
+pub struct RebuildArgs {
+    /// Package id. This is the `{mbpkgid}` in `cloud/server/build/{mbpkgid}`.
+    #[arg(short, long)]
+    pub mbpkgid: u32,
+    #[command(flatten)]
+    pub build: BuildArgs,
 }
 
 #[cfg(test)]

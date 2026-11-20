@@ -8,7 +8,7 @@ use crossterm::event::{
 };
 use ratatui::layout::Position;
 
-use crate::focus::{Focus, Modal, Screen, Split, target_at};
+use crate::focus::{Aim, Focus, Modal, Screen, Split, target_at};
 use crate::model::App;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,6 +77,10 @@ fn on_key(app: &mut App, screen: &mut Screen, key: KeyEvent) -> Action {
         }
         KeyCode::Enter if !repeat => app.activate_focused(),
         KeyCode::Backspace if app.typing() => app.backspace(),
+        KeyCode::Char('h') if !app.typing() => app.move_aim(screen, Aim::Left),
+        KeyCode::Char('j') if !app.typing() => app.move_aim(screen, Aim::Down),
+        KeyCode::Char('k') if !app.typing() => app.move_aim(screen, Aim::Up),
+        KeyCode::Char('l') if !app.typing() => app.move_aim(screen, Aim::Right),
         KeyCode::Char(ch) if app.typing() => app.type_char(ch),
         KeyCode::Char(' ') if !repeat => app.activate_focused(),
         _ => {}
