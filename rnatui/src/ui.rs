@@ -1226,7 +1226,9 @@ fn render_log(frame: &mut Frame<'_>, area: Rect, app: &App) {
             Level::Error => theme::RED,
             Level::Ok => theme::GREEN,
         };
-        lines.push((clip(&entry.text, width), color));
+        for piece in wrap_status(&entry.text, width) {
+            lines.push((piece, color));
+        }
     }
     if let Some(activity) = app.activity() {
         lines.push((clip(activity, width), theme::GRAY));
@@ -1643,6 +1645,17 @@ fn pad_left(text: &str, width: usize) -> String {
     let clipped = clip(text, width);
     let extra = width.saturating_sub(clipped.chars().count());
     format!("{}{clipped}", " ".repeat(extra))
+}
+
+fn wrap_status(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    if chars.is_empty() {
+        return vec![String::new()];
+    }
+    chars.chunks(width).map(|chunk| chunk.iter().collect()).collect()
 }
 
 fn clip(text: &str, width: usize) -> String {

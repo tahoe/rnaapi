@@ -2393,7 +2393,7 @@ impl App {
 
     /// A repeating refresh failure stays one line, so the log does not fill.
     fn banner_error_once(&mut self, text: impl Into<String>) {
-        let text = status_text(text.into());
+        let text = status_body(text.into());
         if self
             .log
             .last()
@@ -2413,7 +2413,10 @@ impl App {
     }
 
     fn remember(&mut self, level: Level, text: impl Into<String>) {
-        let text = status_text(text.into());
+        let text = match level {
+            Level::Error => status_body(text.into()),
+            Level::Ok => status_text(text.into()),
+        };
         if text.is_empty() {
             return;
         }
@@ -2847,11 +2850,9 @@ fn ssh_created_line(detail: &str) -> String {
     }
 }
 
-/// One status line. A private key or an API key is not kept.
+/// One success line. A private key or an API key is not kept.
 fn status_text(text: String) -> String {
-    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let flat = redact_private_keys(&flat);
-    let flat = redact_assignments(&flat);
+    let flat = scrub_status(text);
     let max = 160;
     let count = flat.chars().count();
     if count <= max {
@@ -2860,6 +2861,17 @@ fn status_text(text: String) -> String {
     let mut out: String = flat.chars().take(max - 1).collect();
     out.push('…');
     out
+}
+
+/// An error line keeps the API body. A private key or an API key is not kept.
+fn status_body(text: String) -> String {
+    scrub_status(text)
+}
+
+fn scrub_status(text: String) -> String {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let flat = redact_private_keys(&flat);
+    redact_assignments(&flat)
 }
 
 fn redact_private_keys(text: &str) -> String {

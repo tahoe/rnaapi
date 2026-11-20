@@ -292,8 +292,9 @@ fn classify_api_error(
             status.to_string()
         }
     });
-    let summary = redact(&format!("{code}: {message}"), secret);
-    let blob = summary.to_ascii_lowercase();
+    let summary = redact(&body.to_string(), secret);
+    let blob = redact(&format!("{code}: {message} {summary}"), secret)
+        .to_ascii_lowercase();
     if status == reqwest::StatusCode::UNAUTHORIZED
         || blob.contains("api key")
         || blob.contains("invalid key")

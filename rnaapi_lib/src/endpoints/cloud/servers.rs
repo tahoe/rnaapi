@@ -24,7 +24,7 @@ use crate::{EndpointGetAll, EndpointGetOne, EndpointWrite};
 #[write(post, form, name = "buy", path = "cloud/server/buy_build", body: ServerBuildRequest, returns = ServerBuild)]
 #[write(post, form, name = "rebuild", path = "cloud/server/build/{}", id: u32, body: ServerBuildRequest, returns = ServerBuild)]
 // `DeleteServer` serializes to `{}`.
-#[write(post, name = "delete", path = "cloud/server/{}/delete", mbpkgid: u32, body: DeleteServer, returns = DeletedServer)]
+#[write(post, name = "delete", path = "cloud/server/delete/{}", mbpkgid: u32, body: DeleteServer, returns = DeletedServer)]
 #[write(post, form, name = "unlink", path = "cloud/server/{}/unlink", mbpkgid: u32, returns = ())]
 #[write(post, name = "start", path = "cloud/server/{}/start", mbpkgid: u32, body: ServerPower, returns = serde_json::Value)]
 #[write(post, name = "shutdown", path = "cloud/server/{}/shutdown", mbpkgid: u32, body: ServerPower, returns = serde_json::Value)]
@@ -216,7 +216,7 @@ pub struct ServerBuildRequest {
     pub vpc_id: Option<i64>,
 }
 
-/// `POST cloud/server/{mbpkgid}/delete`. The body is `{}`.
+/// `POST cloud/server/delete/{mbpkgid}`. The body is `{}`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeleteServer {}
 
