@@ -6,7 +6,10 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::{
+    Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation,
+    ScrollbarState,
+};
 
 use crate::focus::{
     Action, DetailControl, Focus, Modal, PopupFocus, PromptFocus, Screen,
@@ -69,7 +72,7 @@ pub fn render(frame: &mut Frame<'_>, app: &mut App, screen: &mut Screen) {
     render_top(frame, screen.top, app);
     render_tabs(frame, screen.tabs, app, screen);
     render_body(frame, screen.body, app, screen);
-    render_log(frame, screen.log, app);
+    render_log(frame, app, screen);
     render_hints(frame, screen.hints);
     let area = screen.area;
     match app.modal() {
@@ -1242,11 +1245,46 @@ fn paint_popup_button(
     );
 }
 
-fn render_log(frame: &mut Frame<'_>, area: Rect, app: &App) {
+fn render_log(frame: &mut Frame<'_>, app: &mut App, screen: &mut Screen) {
+    let area = screen.log;
     if area.width == 0 || area.height == 0 {
         return;
     }
-    let width = usize::from(area.width.saturating_sub(2));
+    let focused = page_focused(app) && app.focus == Focus::Log;
+    let edge = if focused {
+        theme::focus_edge()
+    } else {
+        theme::quiet_edge()
+    };
+    let title = if focused {
+        theme::focus_edge().add_modifier(Modifier::BOLD)
+    } else {
+        theme::reading()
+    };
+    let inner = if area.width >= 3 && area.height >= 2 {
+        paint_log_frame(frame, area, edge, title);
+        Rect {
+            x: area.x.saturating_add(1),
+            y: area.y.saturating_add(1),
+            width: area.width.saturating_sub(2),
+            height: area.height.saturating_sub(2),
+        }
+    } else {
+        area
+    };
+    screen.hit(Target::Log, area);
+    if inner.width == 0 || inner.height == 0 {
+        app.note_log_view(0, 1);
+        return;
+    }
+    let bar = inner.width > 1;
+    let text_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width.saturating_sub(u16::from(bar)),
+        height: inner.height,
+    };
+    let width = usize::from(text_area.width.saturating_sub(1));
     let mut lines = Vec::new();
     for entry in app.status_lines() {
         let color = match entry.level {
@@ -1260,18 +1298,54 @@ fn render_log(frame: &mut Frame<'_>, area: Rect, app: &App) {
     if let Some(activity) = app.activity() {
         lines.push((clip(activity, width), theme::GRAY));
     }
-    let height = usize::from(area.height);
-    let start = lines.len().saturating_sub(height);
-    let visible = lines.len() - start;
-    let pad = height - visible;
-    for (offset, (text, color)) in lines.into_iter().skip(start).enumerate() {
+    app.note_log_view(lines.len(), text_area.height);
+    let start = app.log_scroll;
+    for (offset, (text, color)) in lines
+        .iter()
+        .skip(start)
+        .take(usize::from(text_area.height))
+        .enumerate()
+    {
         paint_plain(
             frame,
-            row_rect(area, (pad + offset) as u16),
+            row_rect(text_area, offset as u16),
             &format!(" {text}"),
-            Style::default().fg(color),
+            Style::default().fg(*color),
         );
     }
+    if bar {
+        let mut state = ScrollbarState::new(lines.len())
+            .position(start)
+            .viewport_content_length(usize::from(text_area.height));
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight).style(edge),
+            inner,
+            &mut state,
+        );
+    }
+}
+
+fn paint_log_frame(
+    frame: &mut Frame<'_>, area: Rect, edge: Style, title: Style,
+) {
+    let line = ratatui::symbols::line::ROUNDED;
+    let left = area.x;
+    let right = area.right().saturating_sub(1);
+    let top = area.y;
+    let bottom = area.bottom().saturating_sub(1);
+    paint_cell(frame, left, top, line.top_left, edge);
+    paint_cell(frame, right, top, line.top_right, edge);
+    paint_cell(frame, left, bottom, line.bottom_left, edge);
+    paint_cell(frame, right, bottom, line.bottom_right, edge);
+    for x in left.saturating_add(1)..right {
+        paint_cell(frame, x, top, line.horizontal, edge);
+        paint_cell(frame, x, bottom, line.horizontal, edge);
+    }
+    for y in top.saturating_add(1)..bottom {
+        paint_cell(frame, left, y, line.vertical, edge);
+        paint_cell(frame, right, y, line.vertical, edge);
+    }
+    paint_rule_label(frame, left, right, top, " log ", title);
 }
 
 fn render_hints(frame: &mut Frame<'_>, area: Rect) {
@@ -1896,12 +1970,14 @@ mod tests {
         assert!(lines[key].contains("Tab"), "{text}");
         assert!(lines[key].contains("click"), "{text}");
         assert!(!lines[key].contains("status"), "{text}");
-        assert!(lines[key - 1].contains("status 5"), "{text}");
-        assert!(lines[key - 2].contains("status 4"), "{text}");
-        assert!(lines[key - 3].contains("status 3"), "{text}");
-        assert!(lines[key - 4].contains("status 2"), "{text}");
-        assert!(!text.contains("status 0"), "{text}");
-        assert!(!text.contains("status 1"), "{text}");
+        let pane = lines[..key].join("\n");
+        assert!(pane.contains("log"), "{text}");
+        assert!(pane.contains("status 5"), "{text}");
+        assert!(pane.contains("status 4"), "{text}");
+        assert!(!pane.contains("status 0"), "{text}");
+        assert!(!pane.contains("status 1"), "{text}");
+        assert!(!pane.contains("status 2"), "{text}");
+        assert!(!pane.contains("status 3"), "{text}");
     }
 
     #[test]

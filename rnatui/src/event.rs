@@ -51,6 +51,16 @@ fn on_key(app: &mut App, screen: &mut Screen, key: KeyEvent) -> Action {
     if ctrl && !app.typing() && !repeat
         && let Some(aim) = vim_aim(key.code)
     {
+        if app.log_focused() {
+            match aim {
+                Aim::Up => app.scroll_log_edge(false),
+                Aim::Down => {
+                    app.scroll_log_edge(true);
+                    return Action::Continue;
+                }
+                Aim::Left | Aim::Right => {}
+            }
+        }
         app.jump_aim(screen, aim);
         return Action::Continue;
     }
@@ -72,14 +82,28 @@ fn on_key(app: &mut App, screen: &mut Screen, key: KeyEvent) -> Action {
         }
         KeyCode::Tab => app.focus_move(false),
         KeyCode::Up => {
-            if !app.nudge_choice(-1) {
+            if app.log_focused() {
+                if app.log_at_top() {
+                    app.move_aim(screen, Aim::Up);
+                } else {
+                    app.scroll_log(-1);
+                }
+            } else if !app.nudge_choice(-1) {
                 app.move_list(-1);
             }
         }
         KeyCode::Down => {
-            if !app.nudge_choice(1) {
+            if app.log_focused() {
+                app.scroll_log(1);
+            } else if !app.nudge_choice(1) {
                 app.move_list(1);
             }
+        }
+        KeyCode::PageUp if app.log_focused() => {
+            app.scroll_log_page(false);
+        }
+        KeyCode::PageDown if app.log_focused() => {
+            app.scroll_log_page(true);
         }
         KeyCode::Left => {
             let _ = app.nudge_choice(-1);
@@ -95,10 +119,18 @@ fn on_key(app: &mut App, screen: &mut Screen, key: KeyEvent) -> Action {
             }
         }
         KeyCode::Char('j') if !app.typing() && !repeat => {
-            app.move_aim(screen, Aim::Down)
+            if app.log_focused() {
+                app.scroll_log(1);
+            } else {
+                app.move_aim(screen, Aim::Down);
+            }
         }
         KeyCode::Char('k') if !app.typing() && !repeat => {
-            app.move_aim(screen, Aim::Up)
+            if app.log_focused() && !app.log_at_top() {
+                app.scroll_log(-1);
+            } else {
+                app.move_aim(screen, Aim::Up);
+            }
         }
         KeyCode::Char('l') if !app.typing() && !repeat => {
             if !app.nudge_choice(1) {
@@ -176,7 +208,9 @@ fn on_mouse(app: &mut App, screen: &mut Screen, mouse: MouseEvent) {
 
 fn scroll(app: &mut App, screen: &Screen, column: u16, row: u16, delta: i32) {
     let point = Position::new(column, row);
-    if screen.list.contains(point) {
+    if screen.log.contains(point) {
+        app.scroll_log(delta);
+    } else if screen.list.contains(point) {
         app.scroll_list(delta);
     } else if screen.detail.contains(point) {
         app.scroll_detail(delta);
@@ -382,8 +416,65 @@ mod tests {
         assert_eq!(app.focus, Focus::Tab(Tab::Servers));
         assert!(app.prompt.is_none());
         on_event(&mut app, &mut screen, ctrl('j'));
-        assert!(matches!(app.focus, Focus::Row(_)));
+        assert_eq!(app.focus, Focus::Log);
         assert!(app.prompt.is_none());
+    }
+
+    #[test]
+    fn the_log_pane_scrolls_when_lines_are_covered() {
+        let mut app = App::new("vapi2.netactuate.com");
+        app.set_servers(
+            vec![ServerRow::listed(
+                1001,
+                "web-01.example",
+                "running",
+                ServerKind::Virtual,
+            )],
+            1001,
+        );
+        for index in 0..40 {
+            app.banner_error(format!("covered status {index}"));
+        }
+        app.focus = Focus::Log;
+        let mut screen = Screen::default();
+        draw(&mut app, &mut screen);
+        let tail = app.log_scroll;
+        assert!(tail > 0, "covered lines should sit above the pane");
+        on_event(&mut app, &mut screen, key(KeyCode::PageUp));
+        assert!(app.log_scroll < tail);
+        let stepped = app.log_scroll;
+        on_event(&mut app, &mut screen, key(KeyCode::Char('k')));
+        assert_eq!(app.log_scroll, stepped - 1);
+        on_event(&mut app, &mut screen, key(KeyCode::PageDown));
+        on_event(&mut app, &mut screen, key(KeyCode::PageDown));
+        assert_eq!(app.log_scroll, tail);
+        assert!(app.prompt.is_none());
+        let point = screen.log;
+        on_event(
+            &mut app,
+            &mut screen,
+            mouse(MouseEventKind::ScrollUp, point.x.saturating_add(1), point.y.saturating_add(1)),
+        );
+        assert!(app.log_scroll < tail);
+        app.focus = Focus::Row(0);
+        on_event(
+            &mut app,
+            &mut screen,
+            mouse(MouseEventKind::Down(MouseButton::Left), point.x.saturating_add(1), point.y.saturating_add(1)),
+        );
+        assert_eq!(app.focus, Focus::Log);
+        assert!(app.prompt.is_none());
+
+        let mut fitted = App::new("vapi2.netactuate.com");
+        fitted.banner_error("one short line");
+        fitted.focus = Focus::Log;
+        let mut fitted_screen = Screen::default();
+        draw(&mut fitted, &mut fitted_screen);
+        assert_eq!(fitted.log_scroll, 0);
+        on_event(&mut fitted, &mut fitted_screen, key(KeyCode::PageUp));
+        on_event(&mut fitted, &mut fitted_screen, key(KeyCode::Char('j')));
+        assert_eq!(fitted.log_scroll, 0);
+        assert_eq!(fitted.focus, Focus::Log);
     }
 
     fn mouse(kind: MouseEventKind, column: u16, row: u16) -> Event {

@@ -625,6 +625,11 @@ pub struct App {
     pub list_scroll: usize,
     pub detail_scroll: u16,
     pub list_window: u16,
+    /// First visible wrapped log line. The tail is kept while `log_follow` is set.
+    pub log_scroll: usize,
+    log_follow: bool,
+    log_window: u16,
+    log_lines: usize,
     accepting: bool,
     next_id: u64,
     selection_gen: u64,
@@ -673,6 +678,10 @@ impl App {
             list_scroll: 0,
             detail_scroll: 0,
             list_window: 8,
+            log_scroll: 0,
+            log_follow: true,
+            log_window: 1,
+            log_lines: 0,
             accepting: true,
             next_id: 0,
             selection_gen: 0,
@@ -984,6 +993,7 @@ impl App {
                 Focus::Row(index) => Some(Target::Row(index)),
                 Focus::Detail(control) => Some(Target::Detail(control)),
                 Focus::ServerPane(pane) => Some(Target::ServerPane(pane)),
+                Focus::Log => Some(Target::Log),
                 Focus::Split(_) => None,
             },
             crate::focus::Modal::Power => {
@@ -1012,6 +1022,7 @@ impl App {
             Target::Row(index) => self.focus = Focus::Row(index),
             Target::Detail(control) => self.focus = Focus::Detail(control),
             Target::ServerPane(pane) => self.focus = Focus::ServerPane(pane),
+            Target::Log => self.focus = Focus::Log,
             Target::Power(focus) => {
                 if let Some(popup) = self.power.as_mut() {
                     popup.focus = focus;
@@ -1059,7 +1070,7 @@ impl App {
             Focus::Row(index) => self.select_index(index),
             Focus::Detail(control) => self.activate_detail(control),
             Focus::ServerPane(pane) => self.activate_server_pane(pane),
-            Focus::Split(_) => {}
+            Focus::Log | Focus::Split(_) => {}
         }
     }
 
@@ -1084,6 +1095,7 @@ impl App {
                 self.activate_detail(control);
             }
             Target::ServerPane(pane) => self.activate_server_pane(pane),
+            Target::Log => self.focus = Focus::Log,
             Target::Power(focus) => self.activate_power(focus),
             Target::Prompt(focus) => self.activate_prompt(focus),
         }
@@ -1137,6 +1149,61 @@ impl App {
         if self.detail_scroll > max {
             self.detail_scroll = max;
         }
+    }
+
+    pub fn log_focused(&self) -> bool {
+        self.modal() == crate::focus::Modal::None && self.focus == Focus::Log
+    }
+
+    /// The log pane reports how many wrapped lines it has and how many fit.
+    pub fn note_log_view(&mut self, lines: usize, window: u16) {
+        self.log_lines = lines;
+        self.log_window = window.max(1);
+        let max = self.log_max();
+        if self.log_follow || self.log_scroll > max {
+            self.log_scroll = max;
+        }
+    }
+
+    /// `true` when the viewport moved. The bottom of the buffer follows new lines.
+    pub fn scroll_log(&mut self, delta: i32) -> bool {
+        if self.modal() != crate::focus::Modal::None {
+            return false;
+        }
+        let max = self.log_max();
+        let next = (self.log_scroll as i32 + delta).clamp(0, max as i32) as usize;
+        let changed = next != self.log_scroll;
+        self.log_scroll = next;
+        self.log_follow = next == max;
+        changed
+    }
+
+    pub fn scroll_log_page(&mut self, down: bool) -> bool {
+        let step = i32::from(self.log_window.max(1));
+        self.scroll_log(if down { step } else { -step })
+    }
+
+    /// Jump to the oldest line or the tail. The tail follows new lines again.
+    pub fn scroll_log_edge(&mut self, bottom: bool) {
+        if self.modal() != crate::focus::Modal::None {
+            return;
+        }
+        if bottom {
+            self.log_scroll = self.log_max();
+            self.log_follow = true;
+        } else {
+            self.log_scroll = 0;
+            self.log_follow = self.log_max() == 0;
+        }
+    }
+
+    pub fn log_at_top(&self) -> bool {
+        self.log_scroll == 0
+    }
+
+    fn log_max(&self) -> usize {
+        self.log_lines
+            .saturating_sub(usize::from(self.log_window.max(1)))
     }
 
     pub fn type_char(&mut self, ch: char) {
@@ -2601,7 +2668,7 @@ impl App {
         if self.power.is_some() || self.prompt.is_some() {
             return;
         }
-        if matches!(self.focus, Focus::Split(_)) {
+        if matches!(self.focus, Focus::Split(_) | Focus::Log) {
             return;
         }
         let items =
@@ -3024,7 +3091,7 @@ pub fn api_host(url: &str) -> String {
     }
 }
 
-const LOG_KEEP: usize = 48;
+const LOG_KEEP: usize = 1000;
 
 fn loaded(plural: &str, count: usize) -> String {
     let word = if count == 1 {
@@ -3180,6 +3247,26 @@ mod tests {
 
     fn row(id: u32, kind: ServerKind) -> ServerRow {
         ServerRow::listed(id, &format!("host-{id}.example"), "running", kind)
+    }
+
+    #[test]
+    fn the_log_keeps_about_a_thousand_lines() {
+        let mut app = App::new("vapi2.netactuate.com");
+        for index in 0..=1000 {
+            app.banner_error(format!("line {index}"));
+        }
+        assert_eq!(app.status_lines().len(), 1000);
+        assert_eq!(app.status_lines()[0].text, "line 1");
+        assert_eq!(app.status_lines().last().unwrap().text, "line 1000");
+        app.note_log_view(1000, 4);
+        assert_eq!(app.log_scroll, 996);
+        assert!(!app.scroll_log(1));
+        assert!(app.scroll_log(-1));
+        assert_eq!(app.log_scroll, 995);
+        app.note_log_view(3, 4);
+        assert_eq!(app.log_scroll, 0);
+        assert!(!app.scroll_log(-1));
+        assert!(!app.scroll_log(1));
     }
 
     fn servers(ids: &[u32]) -> App {

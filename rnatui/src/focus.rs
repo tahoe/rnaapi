@@ -211,6 +211,8 @@ pub enum Focus {
     Detail(DetailControl),
     ServerPane(ServerPane),
     Split(Split),
+    /// The bottom log. It is not part of the Tab cycle.
+    Log,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -249,6 +251,8 @@ pub enum Target {
     ServerPane(ServerPane),
     Power(PopupFocus),
     Prompt(PromptFocus),
+    /// The bottom log pane.
+    Log,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -649,7 +653,9 @@ pub enum Aim {
 /// row under it. `l` walks that row right, and `h` walks it left. Only the
 /// leftmost of those tabs returns `h` to the selected list row. `k` from the
 /// top of a pane returns to the open main tab. Inside the left pane, `j` and
-/// `k` walk that pane's buttons and list.
+/// `k` walk that pane's buttons and list. `j` from the bottom of the left
+/// pane, or from the bottom subtab, enters the log. `h` there returns to the
+/// selected list row, and `l` enters the right pane.
 pub fn page_neighbor(
     screen: &Screen, current: Target, aim: Aim, open_tab: Tab,
     selected: Option<usize>,
@@ -663,6 +669,7 @@ pub fn page_neighbor(
         (Band::Left, Aim::Left) => None,
         (Band::Left, Aim::Down) => {
             step_inside(screen, current, Band::Left, open_tab, true)
+                .or(Some(Target::Log))
         }
         (Band::Left, Aim::Up) => {
             step_inside(screen, current, Band::Left, open_tab, false)
@@ -691,7 +698,13 @@ pub fn page_neighbor(
         }
         (Band::Subtabs, Aim::Up) => first_in(screen, Band::Right, open_tab)
             .or(Some(Target::Tab(open_tab))),
-        (Band::Subtabs, Aim::Down) => None,
+        (Band::Subtabs, Aim::Down) => Some(Target::Log),
+        (Band::Log, Aim::Up) => Some(Target::Tab(open_tab)),
+        (Band::Log, Aim::Down) => None,
+        (Band::Log, Aim::Left) => selected
+            .map(Target::Row)
+            .or_else(|| first_in(screen, Band::Left, open_tab)),
+        (Band::Log, Aim::Right) => first_in(screen, Band::Right, open_tab),
     }
 }
 
@@ -702,6 +715,7 @@ enum Band {
     Right,
     /// The tab row under the right pane's buttons.
     Subtabs,
+    Log,
 }
 
 fn band(target: Target, tab: Tab) -> Option<Band> {
@@ -710,6 +724,7 @@ fn band(target: Target, tab: Tab) -> Option<Band> {
         Target::Row(_) => Some(Band::Left),
         Target::Detail(_) => Some(Band::Right),
         Target::ServerPane(_) => Some(Band::Subtabs),
+        Target::Log => Some(Band::Log),
         Target::Action(action) if action.is_left(tab) => Some(Band::Left),
         Target::Action(action) if action.is_right(tab) => Some(Band::Right),
         Target::Action(_) | Target::Power(_) | Target::Prompt(_) => None,
@@ -745,7 +760,7 @@ fn step_inside(
     hits.get(next).map(|hit| hit.target)
 }
 
-fn ordered<'a>(screen: &'a Screen, band: Band, tab: Tab) -> Vec<&'a Hit> {
+fn ordered(screen: &Screen, band: Band, tab: Tab) -> Vec<&Hit> {
     let mut hits: Vec<&Hit> = screen
         .hits
         .iter()
