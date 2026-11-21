@@ -3,7 +3,7 @@
 // under the GNU General Public License v3.0
 
 use crate::focus::{
-    Action, Aim, DetailControl, Focus, PopupFocus, PromptFocus, Screen,
+    Action, Aim, CopyId, DetailControl, Focus, PopupFocus, PromptFocus, Screen,
     ServerPane, Slot, Split, Tab, Target, neighbor, order, page_neighbor,
     starting_focus, step, step_popup, step_prompt,
 };
@@ -630,6 +630,11 @@ pub struct App {
     log_follow: bool,
     log_window: u16,
     log_lines: usize,
+    /// The last value a copy icon sent to the clipboard. Tests read it.
+    #[cfg(test)]
+    pub last_copied: Option<String>,
+    /// Kept alive so an X11 or Wayland copy stays readable while rnatui runs.
+    clipboard: Option<arboard::Clipboard>,
     accepting: bool,
     next_id: u64,
     selection_gen: u64,
@@ -682,6 +687,9 @@ impl App {
             log_follow: true,
             log_window: 1,
             log_lines: 0,
+            #[cfg(test)]
+            last_copied: None,
+            clipboard: None,
             accepting: true,
             next_id: 0,
             selection_gen: 0,
@@ -994,6 +1002,7 @@ impl App {
                 Focus::Detail(control) => Some(Target::Detail(control)),
                 Focus::ServerPane(pane) => Some(Target::ServerPane(pane)),
                 Focus::Log => Some(Target::Log),
+                Focus::Copy(id) => Some(Target::Copy(id)),
                 Focus::Split(_) => None,
             },
             crate::focus::Modal::Power => {
@@ -1023,6 +1032,7 @@ impl App {
             Target::Detail(control) => self.focus = Focus::Detail(control),
             Target::ServerPane(pane) => self.focus = Focus::ServerPane(pane),
             Target::Log => self.focus = Focus::Log,
+            Target::Copy(id) => self.focus = Focus::Copy(id),
             Target::Power(focus) => {
                 if let Some(popup) = self.power.as_mut() {
                     popup.focus = focus;
@@ -1071,6 +1081,7 @@ impl App {
             Focus::Detail(control) => self.activate_detail(control),
             Focus::ServerPane(pane) => self.activate_server_pane(pane),
             Focus::Log | Focus::Split(_) => {}
+            Focus::Copy(id) => self.copy_field(id),
         }
     }
 
@@ -1096,6 +1107,10 @@ impl App {
             }
             Target::ServerPane(pane) => self.activate_server_pane(pane),
             Target::Log => self.focus = Focus::Log,
+            Target::Copy(id) => {
+                self.focus = Focus::Copy(id);
+                self.copy_field(id);
+            }
             Target::Power(focus) => self.activate_power(focus),
             Target::Prompt(focus) => self.activate_prompt(focus),
         }
@@ -1148,6 +1163,87 @@ impl App {
     pub fn clamp_detail_scroll(&mut self, max: u16) {
         if self.detail_scroll > max {
             self.detail_scroll = max;
+        }
+    }
+
+    /// Copy one displayed value. Highlighting the icon does not call this.
+    pub fn copy_field(&mut self, id: CopyId) {
+        let Some((label, value)) = self.copy_payload(id) else {
+            self.banner_error("nothing to copy");
+            return;
+        };
+        if value.is_empty() {
+            self.banner_error("nothing to copy");
+            return;
+        }
+        #[cfg(test)]
+        {
+            self.last_copied = Some(value.clone());
+        }
+        match self.clipboard_set(&value) {
+            Ok(()) => self.banner_ok(format!("copied {label}")),
+            Err(err) => self.banner_error(format!("copy failed: {err}")),
+        }
+    }
+
+    fn clipboard_set(&mut self, text: &str) -> Result<(), String> {
+        if self.clipboard.is_none() {
+            self.clipboard = Some(arboard::Clipboard::new().map_err(|err| err.to_string())?);
+        }
+        let board = self.clipboard.as_mut().expect("clipboard");
+        if board.set_text(text).is_ok() {
+            return Ok(());
+        }
+        self.clipboard = None;
+        self.clipboard = Some(arboard::Clipboard::new().map_err(|err| err.to_string())?);
+        self.clipboard
+            .as_mut()
+            .expect("clipboard")
+            .set_text(text)
+            .map_err(|err| err.to_string())
+    }
+
+    fn copy_payload(&self, id: CopyId) -> Option<(String, String)> {
+        match id {
+            CopyId::Fqdn => self
+                .selected_server()
+                .map(|server| ("fqdn".into(), server.fqdn.clone())),
+            CopyId::Package => self.selected_server().map(|server| {
+                ("mbpkgid".into(), server.mbpkgid.to_string())
+            }),
+            CopyId::Kind => self
+                .selected_server()
+                .map(|server| ("kind".into(), server.kind.label().to_string())),
+            CopyId::State => self
+                .selected_server()
+                .map(|server| ("state".into(), server.state.clone())),
+            CopyId::Status => self
+                .selected_server()
+                .map(|server| ("status".into(), server.status.clone())),
+            CopyId::Ip => self
+                .selected_server()
+                .map(|server| ("ip".into(), server.ip.clone())),
+            CopyId::Location => self
+                .selected_server()
+                .map(|server| ("location".into(), server.location.clone())),
+            CopyId::Extra(index) => {
+                let server = self.selected_server()?;
+                if self.server_detail_for != Some(u64::from(server.mbpkgid)) {
+                    return None;
+                }
+                self.server_extras.get(usize::from(index)).map(|field| {
+                    (field.label.clone(), field.value.clone())
+                })
+            }
+            CopyId::SshName => self
+                .selected_key()
+                .map(|key| ("name".into(), key.name.clone())),
+            CopyId::SshId => self
+                .selected_key()
+                .map(|key| ("id".into(), key.id.to_string())),
+            CopyId::SshFingerprint => self
+                .selected_key()
+                .map(|key| ("fingerprint".into(), key.fingerprint.clone())),
         }
     }
 
@@ -2668,7 +2764,7 @@ impl App {
         if self.power.is_some() || self.prompt.is_some() {
             return;
         }
-        if matches!(self.focus, Focus::Split(_) | Focus::Log) {
+        if matches!(self.focus, Focus::Split(_) | Focus::Log | Focus::Copy(_)) {
             return;
         }
         let items =
@@ -3258,11 +3354,23 @@ mod tests {
         assert_eq!(app.status_lines().len(), 1000);
         assert_eq!(app.status_lines()[0].text, "line 1");
         assert_eq!(app.status_lines().last().unwrap().text, "line 1000");
+        let body = format!("api {}", "x".repeat(400));
+        app.banner_error(body.clone());
+        assert_eq!(app.status_lines().len(), 1000);
+        assert_eq!(app.status_lines()[0].text, "line 2");
+        assert_eq!(app.status_lines().last().unwrap().text, body);
         app.note_log_view(1000, 4);
         assert_eq!(app.log_scroll, 996);
         assert!(!app.scroll_log(1));
         assert!(app.scroll_log(-1));
         assert_eq!(app.log_scroll, 995);
+        // New lines keep a scrolled-up offset. The tail follows again at the bottom.
+        app.note_log_view(1001, 4);
+        assert_eq!(app.log_scroll, 995);
+        assert!(app.scroll_log(100));
+        assert_eq!(app.log_scroll, 997);
+        app.note_log_view(1002, 4);
+        assert_eq!(app.log_scroll, 998);
         app.note_log_view(3, 4);
         assert_eq!(app.log_scroll, 0);
         assert!(!app.scroll_log(-1));

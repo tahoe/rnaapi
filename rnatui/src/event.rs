@@ -432,38 +432,87 @@ mod tests {
             )],
             1001,
         );
-        for index in 0..40 {
-            app.banner_error(format!("covered status {index}"));
-        }
         app.focus = Focus::Log;
         let mut screen = Screen::default();
-        draw(&mut app, &mut screen);
+        // Short lines, added until the pane clips, stay within one page of the start.
+        for index in 0..30 {
+            app.banner_error(format!("covered status {index}"));
+            draw(&mut app, &mut screen);
+            if app.log_scroll > 0 {
+                break;
+            }
+        }
         let tail = app.log_scroll;
         assert!(tail > 0, "covered lines should sit above the pane");
-        on_event(&mut app, &mut screen, key(KeyCode::PageUp));
-        assert!(app.log_scroll < tail);
-        let stepped = app.log_scroll;
-        on_event(&mut app, &mut screen, key(KeyCode::Char('k')));
-        assert_eq!(app.log_scroll, stepped - 1);
-        on_event(&mut app, &mut screen, key(KeyCode::PageDown));
-        on_event(&mut app, &mut screen, key(KeyCode::PageDown));
-        assert_eq!(app.log_scroll, tail);
-        assert!(app.prompt.is_none());
         let point = screen.log;
-        on_event(
-            &mut app,
-            &mut screen,
-            mouse(MouseEventKind::ScrollUp, point.x.saturating_add(1), point.y.saturating_add(1)),
-        );
-        assert!(app.log_scroll < tail);
+        let column = point.x.saturating_add(1);
+        let row = point.y.saturating_add(1);
         app.focus = Focus::Row(0);
         on_event(
             &mut app,
             &mut screen,
-            mouse(MouseEventKind::Down(MouseButton::Left), point.x.saturating_add(1), point.y.saturating_add(1)),
+            mouse(MouseEventKind::ScrollUp, column, row),
         );
+        assert!(app.log_scroll < tail, "wheel up shows older lines");
+        assert_eq!(app.focus, Focus::Row(0), "the wheel does not take focus");
+        app.focus = Focus::Log;
+        on_event(&mut app, &mut screen, key(KeyCode::PageDown));
+        assert_eq!(app.log_scroll, tail);
+        on_event(&mut app, &mut screen, key(KeyCode::PageUp));
+        assert_eq!(app.log_scroll, 0, "page up reveals the start");
+        on_event(&mut app, &mut screen, key(KeyCode::PageDown));
+        assert_eq!(app.log_scroll, tail, "page down returns to the tail");
+        on_event(&mut app, &mut screen, key(KeyCode::Char('k')));
+        assert_eq!(app.log_scroll, tail - 1);
+        on_event(&mut app, &mut screen, key(KeyCode::Char('j')));
+        assert_eq!(app.log_scroll, tail);
+        assert_eq!(app.focus, Focus::Log, "j at the bottom stays on the log");
+        assert!(app.prompt.is_none());
+        assert!(app.power.is_none());
+
+        app.focus = Focus::Row(0);
+        on_event(&mut app, &mut screen, key(KeyCode::Char('j')));
+        assert_eq!(app.focus, Focus::Log);
+        assert!(app.prompt.is_none(), "j onto the log does not open a prompt");
+        app.focus = Focus::ServerPane(crate::focus::ServerPane::Bandwidth);
+        on_event(&mut app, &mut screen, key(KeyCode::Char('j')));
         assert_eq!(app.focus, Focus::Log);
         assert!(app.prompt.is_none());
+        app.focus = Focus::Detail(crate::focus::DetailControl::On);
+        on_event(&mut app, &mut screen, key(KeyCode::Char('j')));
+        assert_eq!(
+            app.focus,
+            Focus::ServerPane(crate::focus::ServerPane::Jobs)
+        );
+        app.focus = Focus::Log;
+        on_event(&mut app, &mut screen, key(KeyCode::Char('h')));
+        assert_eq!(app.focus, Focus::Row(0));
+        assert!(app.prompt.is_none());
+        app.focus = Focus::Log;
+        on_event(&mut app, &mut screen, key(KeyCode::Char('l')));
+        assert_eq!(
+            app.focus,
+            Focus::Detail(crate::focus::DetailControl::On)
+        );
+        assert!(app.power.is_none(), "l onto On only highlights it");
+        app.focus = Focus::Log;
+        on_event(&mut app, &mut screen, ctrl('j'));
+        assert_eq!(app.focus, Focus::Log);
+        assert_eq!(app.log_scroll, tail);
+        on_event(&mut app, &mut screen, ctrl('k'));
+        assert_eq!(app.focus, Focus::Tab(Tab::Servers));
+        assert_eq!(app.log_scroll, 0);
+        assert!(app.prompt.is_none());
+        assert!(app.power.is_none());
+
+        app.focus = Focus::Row(0);
+        on_event(
+            &mut app,
+            &mut screen,
+            mouse(MouseEventKind::Down(MouseButton::Left), column, row),
+        );
+        assert_eq!(app.focus, Focus::Log);
+        assert!(app.prompt.is_none(), "a click focuses the log");
 
         let mut fitted = App::new("vapi2.netactuate.com");
         fitted.banner_error("one short line");
@@ -471,8 +520,19 @@ mod tests {
         let mut fitted_screen = Screen::default();
         draw(&mut fitted, &mut fitted_screen);
         assert_eq!(fitted.log_scroll, 0);
+        let fitted_point = fitted_screen.log;
         on_event(&mut fitted, &mut fitted_screen, key(KeyCode::PageUp));
         on_event(&mut fitted, &mut fitted_screen, key(KeyCode::Char('j')));
+        on_event(&mut fitted, &mut fitted_screen, key(KeyCode::Down));
+        on_event(
+            &mut fitted,
+            &mut fitted_screen,
+            mouse(
+                MouseEventKind::ScrollUp,
+                fitted_point.x.saturating_add(1),
+                fitted_point.y.saturating_add(1),
+            ),
+        );
         assert_eq!(fitted.log_scroll, 0);
         assert_eq!(fitted.focus, Focus::Log);
     }

@@ -7,7 +7,7 @@ members = [
     "rnatui",
 ]
 [workspace.package]
-version = "2.2.3"
+version = "2.2.4"
 license = "GPL-3.0-only"
 edition = "2024"
 description = "NetActuate API client library and cli program"

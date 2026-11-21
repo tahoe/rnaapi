@@ -213,6 +213,8 @@ pub enum Focus {
     Split(Split),
     /// The bottom log. It is not part of the Tab cycle.
     Log,
+    /// A copy icon beside a displayed value. It is not part of the Tab cycle.
+    Copy(CopyId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -253,6 +255,24 @@ pub enum Target {
     Prompt(PromptFocus),
     /// The bottom log pane.
     Log,
+    /// A copy icon beside a displayed value.
+    Copy(CopyId),
+}
+
+/// One displayed value that can be copied.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CopyId {
+    Fqdn,
+    Package,
+    Kind,
+    State,
+    Status,
+    Ip,
+    Location,
+    Extra(u16),
+    SshName,
+    SshId,
+    SshFingerprint,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -677,6 +697,7 @@ pub fn page_neighbor(
         }
         (Band::Right, Aim::Right) => {
             step_inside(screen, current, Band::Right, open_tab, true)
+                .or_else(|| first_in(screen, Band::Copy, open_tab))
         }
         (Band::Right, Aim::Left) => {
             step_inside(screen, current, Band::Right, open_tab, false)
@@ -705,6 +726,18 @@ pub fn page_neighbor(
             .map(Target::Row)
             .or_else(|| first_in(screen, Band::Left, open_tab)),
         (Band::Log, Aim::Right) => first_in(screen, Band::Right, open_tab),
+        (Band::Copy, Aim::Down) => {
+            step_inside(screen, current, Band::Copy, open_tab, true)
+        }
+        (Band::Copy, Aim::Up) => {
+            step_inside(screen, current, Band::Copy, open_tab, false)
+                .or_else(|| first_in(screen, Band::Right, open_tab))
+                .or(Some(Target::Tab(open_tab)))
+        }
+        (Band::Copy, Aim::Left) => selected
+            .map(Target::Row)
+            .or_else(|| first_in(screen, Band::Left, open_tab)),
+        (Band::Copy, Aim::Right) => None,
     }
 }
 
@@ -716,6 +749,7 @@ enum Band {
     /// The tab row under the right pane's buttons.
     Subtabs,
     Log,
+    Copy,
 }
 
 fn band(target: Target, tab: Tab) -> Option<Band> {
@@ -725,6 +759,7 @@ fn band(target: Target, tab: Tab) -> Option<Band> {
         Target::Detail(_) => Some(Band::Right),
         Target::ServerPane(_) => Some(Band::Subtabs),
         Target::Log => Some(Band::Log),
+        Target::Copy(_) => Some(Band::Copy),
         Target::Action(action) if action.is_left(tab) => Some(Band::Left),
         Target::Action(action) if action.is_right(tab) => Some(Band::Right),
         Target::Action(_) | Target::Power(_) | Target::Prompt(_) => None,

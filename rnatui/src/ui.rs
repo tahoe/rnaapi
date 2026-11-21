@@ -12,11 +12,11 @@ use ratatui::widgets::{
 };
 
 use crate::focus::{
-    Action, DetailControl, Focus, Modal, PopupFocus, PromptFocus, Screen,
-    ServerPane, Slot, Split, TABS, Tab, Target,
+    Action, CopyId, DetailControl, Focus, Modal, PopupFocus, PromptFocus,
+    Screen, ServerPane, Slot, Split, TABS, Tab, Target,
 };
 use crate::model::{
-    App, Field, Level, Pane, Section, ServerKind, ServerRow,
+    App, Field, Level, Pane, Section, ServerRow,
     power_confirm_text, short_fingerprint,
 };
 
@@ -313,11 +313,13 @@ fn paint_split_frame(
             || matches!(app.focus, Focus::Action(action) if action.is_left(app.tab))
             || (app.row_count() == 0 && app.focus == Focus::Tab(app.tab)));
     let detail_on = page
-        && (matches!(app.focus, Focus::Detail(_) | Focus::ServerPane(_))
-            || matches!(
-                app.focus,
-                Focus::Action(action) if action.is_right(app.tab)
-            ));
+        && (matches!(
+            app.focus,
+            Focus::Detail(_) | Focus::ServerPane(_) | Focus::Copy(_)
+        ) || matches!(
+            app.focus,
+            Focus::Action(action) if action.is_right(app.tab)
+        ));
     let columns_on = page && matches!(app.focus, Focus::Split(Split::Columns));
     let rows_on = page && matches!(app.focus, Focus::Split(Split::Rows));
     let list_edge = if list_on {
@@ -662,7 +664,7 @@ fn render_detail(
     }
     match app.tab {
         Tab::Servers => render_server(frame, area, app, screen),
-        Tab::SshKeys => render_ssh(frame, area, app),
+        Tab::SshKeys => render_ssh(frame, area, app, screen),
         Tab::Locations => render_record(frame, area, app, location_pane(app)),
         Tab::Dns => render_record(frame, area, app, zone_pane(app)),
         Tab::Account => render_record(frame, area, app, account_pane(app)),
@@ -684,11 +686,11 @@ fn render_server(
         );
         let reserve = 4.min(bottom.saturating_sub(y));
         let budget = bottom.saturating_sub(y).saturating_sub(reserve);
-        for line in server_field_lines(app, &server)
+        for row in server_copy_rows(app, &server)
             .into_iter()
             .take(budget as usize)
         {
-            paint_line(frame, row_at(area, y), line);
+            paint_copy_row(frame, screen, area, y, app, &row);
             y = y.saturating_add(1);
         }
     } else {
@@ -849,33 +851,80 @@ fn pane_header(pane: ServerPane) -> &'static str {
     }
 }
 
-fn server_field_lines(app: &App, server: &ServerRow) -> Vec<Line<'static>> {
-    let mut lines = vec![
-        field_line("fqdn", &server.fqdn, theme::TEXT),
-        field_line("mbpkgid", &server.mbpkgid.to_string(), theme::TEXT),
-        kind_line(server.kind),
-        field_line("state", &server.state, state_color(&server.state)),
-        field_line("status", &server.status, state_color(&server.status)),
-        field_line("ip", &server.ip, theme::TEXT),
-        field_line("location", &server.location, theme::TEXT),
+struct CopyRow {
+    label: String,
+    value: String,
+    color: Color,
+    extra: String,
+    id: CopyId,
+}
+
+fn server_copy_rows(app: &App, server: &ServerRow) -> Vec<CopyRow> {
+    let mut rows = vec![
+        copy_row("fqdn", &server.fqdn, theme::TEXT, "", CopyId::Fqdn),
+        copy_row(
+            "mbpkgid",
+            &server.mbpkgid.to_string(),
+            theme::TEXT,
+            "",
+            CopyId::Package,
+        ),
+        copy_row(
+            "kind",
+            server.kind.label(),
+            theme::TEXT,
+            server.kind.command(),
+            CopyId::Kind,
+        ),
+        copy_row("state", &server.state, state_color(&server.state), "", CopyId::State),
+        copy_row(
+            "status",
+            &server.status,
+            state_color(&server.status),
+            "",
+            CopyId::Status,
+        ),
+        copy_row("ip", &server.ip, theme::TEXT, "", CopyId::Ip),
+        copy_row(
+            "location",
+            &server.location,
+            theme::TEXT,
+            "",
+            CopyId::Location,
+        ),
     ];
     if app.server_detail_for == Some(u64::from(server.mbpkgid)) {
-        for extra in &app.server_extras {
-            lines.push(field_line(&extra.label, &extra.value, theme::TEXT));
+        for (index, extra) in app.server_extras.iter().enumerate() {
+            let Some(index) = u16::try_from(index).ok() else {
+                break;
+            };
+            rows.push(copy_row(
+                &extra.label,
+                &extra.value,
+                theme::TEXT,
+                "",
+                CopyId::Extra(index),
+            ));
         }
     }
-    lines
+    rows
 }
 
-fn kind_line(kind: ServerKind) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(pad("kind", 12), theme::label()),
-        Span::styled(kind.label(), Style::default().fg(theme::TEXT)),
-        Span::styled(format!("  {}", kind.command()), theme::label()),
-    ])
+fn copy_row(
+    label: &str, value: &str, color: Color, extra: &str, id: CopyId,
+) -> CopyRow {
+    CopyRow {
+        label: label.to_string(),
+        value: value.to_string(),
+        color,
+        extra: extra.to_string(),
+        id,
+    }
 }
 
-fn render_ssh(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
+fn render_ssh(
+    frame: &mut Frame<'_>, area: Rect, app: &mut App, screen: &mut Screen,
+) {
     let mut y = area.y;
     let bottom = area.bottom();
     if let Some(key) = app.selected_key().cloned() {
@@ -886,19 +935,28 @@ fn render_ssh(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
             &key.name,
             &format!("ssh key {}", key.id),
         );
-        for line in [
-            field_line("name", &key.name, theme::TEXT),
-            field_line("id", &key.id.to_string(), theme::TEXT),
-            field_line(
+        let rows = [
+            copy_row("name", &key.name, theme::TEXT, "", CopyId::SshName),
+            copy_row(
+                "id",
+                &key.id.to_string(),
+                theme::TEXT,
+                "",
+                CopyId::SshId,
+            ),
+            copy_row(
                 "fingerprint",
                 &short_fingerprint(&key.fingerprint),
                 theme::TEXT,
+                "",
+                CopyId::SshFingerprint,
             ),
-        ] {
+        ];
+        for row in rows {
             if y >= bottom {
                 break;
             }
-            paint_line(frame, row_at(area, y), line);
+            paint_copy_row(frame, screen, area, y, app, &row);
             y = y.saturating_add(1);
         }
     } else {
@@ -1314,11 +1372,24 @@ fn render_log(frame: &mut Frame<'_>, app: &mut App, screen: &mut Screen) {
         );
     }
     if bar {
-        let mut state = ScrollbarState::new(lines.len())
-            .position(start)
-            .viewport_content_length(usize::from(text_area.height));
+        // Arrow heads would consume a pane this short, so the thumb and the
+        // track use the whole inner column. A full thumb means nothing is clipped.
+        let window = usize::from(text_area.height).max(1);
+        let (content, position, viewport) = if lines.len() <= window {
+            (1, 0, window)
+        } else {
+            (lines.len(), start, window)
+        };
+        let mut state = ScrollbarState::new(content)
+            .position(position)
+            .viewport_content_length(viewport);
         frame.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::VerticalRight).style(edge),
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .track_symbol(Some(ratatui::symbols::line::VERTICAL))
+                .thumb_symbol(ratatui::symbols::block::FULL)
+                .style(edge),
             inner,
             &mut state,
         );
@@ -1642,6 +1713,57 @@ fn extend_sections(lines: &mut Vec<Line<'static>>, sections: &[Section]) {
     }
 }
 
+/// The value itself is the copy control. A click or Enter/Space copies it.
+fn paint_copy_row(
+    frame: &mut Frame<'_>, screen: &mut Screen, area: Rect, y: u16, app: &App,
+    row: &CopyRow,
+) {
+    if area.width == 0 || y >= area.bottom() {
+        return;
+    }
+    let line = row_at(area, y);
+    let label = pad(&row.label, 12.min(usize::from(line.width)));
+    let label_len = label.chars().count();
+    let label_w = u16::try_from(label_len).unwrap_or(line.width).min(line.width);
+    let rest = usize::from(line.width.saturating_sub(label_w));
+    let extra_len = if row.extra.is_empty() {
+        0
+    } else {
+        row.extra.chars().count().saturating_add(2)
+    };
+    let value_room = rest.saturating_sub(extra_len.min(rest));
+    let shown = clip(&row.value, value_room);
+    let focused = page_focused(app)
+        && app.focus == Focus::Copy(row.id)
+        && !shown.is_empty();
+    let value_style = if focused {
+        theme::focus_edge().add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(row.color)
+    };
+    let mut spans = vec![
+        Span::styled(label, theme::label()),
+        Span::styled(shown.clone(), value_style),
+    ];
+    if !row.extra.is_empty() && rest > value_room {
+        spans.push(Span::styled(format!("  {}", row.extra), theme::label()));
+    }
+    paint_line(frame, line, Line::from(spans));
+    let value_w = u16::try_from(shown.chars().count()).unwrap_or(0);
+    if value_w == 0 {
+        return;
+    }
+    screen.hit(
+        Target::Copy(row.id),
+        Rect {
+            x: line.x.saturating_add(label_w),
+            y: line.y,
+            width: value_w,
+            height: 1,
+        },
+    );
+}
+
 fn field_line(label: &str, value: &str, color: Color) -> Line<'static> {
     Line::from(vec![
         Span::styled(pad(label, 12), theme::label()),
@@ -1786,8 +1908,8 @@ fn tail(text: &str, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::focus::{Aim, target_at};
-    use crate::model::{PowerVerb, ServerKind, ServerRow};
+    use crate::focus::{Action, Aim, CopyId, Focus, ServerPane, target_at};
+    use crate::model::{PowerVerb, ServerKind, ServerRow, SshRow};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::style::Modifier;
@@ -1978,6 +2100,70 @@ mod tests {
         assert!(!pane.contains("status 1"), "{text}");
         assert!(!pane.contains("status 2"), "{text}");
         assert!(!pane.contains("status 3"), "{text}");
+    }
+
+    #[test]
+    fn the_log_is_its_own_framed_pane() {
+        let mut app = sample();
+        app.banner_error("one short line");
+        let mut screen = Screen::default();
+        let buffer = draw(&mut app, &mut screen);
+        let log = screen.log;
+        assert!(log.height >= 3);
+        assert_eq!(buffer.cell((log.x, log.y)).unwrap().symbol(), "╭");
+        assert_eq!(
+            buffer
+                .cell((log.right().saturating_sub(1), log.y))
+                .unwrap()
+                .symbol(),
+            "╮"
+        );
+        assert_eq!(
+            buffer
+                .cell((log.x, log.bottom().saturating_sub(1)))
+                .unwrap()
+                .symbol(),
+            "╰"
+        );
+        let quiet = buffer.cell((log.x, log.y)).unwrap();
+        assert_eq!(quiet.fg, Color::Gray);
+        let title = glyph(&buffer, log, "log");
+        assert_eq!(title.0, Color::White);
+        assert!(!title.1.contains(Modifier::BOLD));
+        let bar = scrollbar_column(&buffer, log);
+        assert!(
+            bar.iter().all(|symbol| symbol == "█"),
+            "a full thumb means nothing is clipped: {bar:?}"
+        );
+
+        for index in 0..12 {
+            app.banner_error(format!("covered status {index}"));
+        }
+        app.focus = Focus::Log;
+        let buffer = draw(&mut app, &mut screen);
+        let edge = buffer.cell((log.x, log.y)).unwrap();
+        assert_eq!(edge.fg, Color::Green);
+        assert_eq!(edge.symbol(), "╭");
+        let title = glyph(&buffer, screen.log, "log");
+        assert_eq!(title.0, Color::Green);
+        assert!(title.1.contains(Modifier::BOLD));
+        let bar = scrollbar_column(&buffer, screen.log);
+        assert!(bar.iter().any(|symbol| symbol == "█"), "{bar:?}");
+        assert!(
+            bar.iter().any(|symbol| symbol != "█"),
+            "a clipped log does not fill the thumb: {bar:?}"
+        );
+    }
+
+    fn scrollbar_column(
+        buffer: &ratatui::buffer::Buffer, log: Rect,
+    ) -> Vec<String> {
+        let x = log.right().saturating_sub(2);
+        let top = log.y.saturating_add(1);
+        let bottom = log.bottom().saturating_sub(1);
+        (top..bottom)
+            .map(|y| buffer.cell((x, y)).unwrap().symbol().to_string())
+            .collect()
     }
 
     #[test]
@@ -2415,6 +2601,65 @@ mod tests {
         app.move_aim(&screen, Aim::Up);
         assert_eq!(app.focus, Focus::Tab(Tab::Servers));
         assert_eq!(app.tab, Tab::Servers);
+    }
+
+    #[test]
+    fn clicking_a_field_value_copies_it() {
+        let mut app = sample();
+        let mut screen = Screen::default();
+        let buffer = draw(&mut app, &mut screen);
+        let value = hit(&screen, Target::Copy(CopyId::Fqdn));
+        assert!(value.width > 2, "the hostname is the hit, not a two-column mark");
+        assert_eq!(buffer.cell((value.x, value.y)).unwrap().symbol(), "w");
+        let label_x = (0..value.x)
+            .rev()
+            .find(|x| buffer.cell((*x, value.y)).unwrap().symbol() == "f")
+            .expect("fqdn label");
+        assert!(label_x < value.x, "the value sits to the right of its label");
+        assert!(hit_opt(&screen, Target::Copy(CopyId::Package)).is_some());
+        assert!(hit_opt(&screen, Target::Copy(CopyId::Ip)).is_some());
+        app.focus = Focus::Copy(CopyId::Fqdn);
+        app.move_aim(&screen, Aim::Down);
+        assert_eq!(app.focus, Focus::Copy(CopyId::Package));
+        assert!(app.last_copied.is_none(), "moving onto the icon does not copy");
+        app.activate_focused();
+        assert_eq!(app.last_copied.as_deref(), Some("1001"));
+        assert!(app.power.is_none());
+        app.activate_target(Target::Copy(CopyId::Fqdn));
+        assert_eq!(app.last_copied.as_deref(), Some("web-01.example"));
+        assert!(app.prompt.is_none());
+
+        app.focus = Focus::Detail(DetailControl::On);
+        draw(&mut app, &mut screen);
+        app.move_aim(&screen, Aim::Down);
+        assert_eq!(app.focus, Focus::ServerPane(ServerPane::Jobs));
+        app.focus = Focus::Action(Action::CancelServer);
+        draw(&mut app, &mut screen);
+        app.move_aim(&screen, Aim::Right);
+        assert_eq!(app.focus, Focus::Copy(CopyId::Fqdn));
+        assert!(app.power.is_none());
+        assert!(app.prompt.is_none());
+
+        let mut app = App::new("vapi2.netactuate.com");
+        app.tab = Tab::SshKeys;
+        app.set_keys(
+            vec![SshRow {
+                id: 7,
+                name: "laptop".into(),
+                fingerprint: "SHA256:abcdef0123456789".into(),
+            }],
+            Some(7),
+        );
+        let mut screen = Screen::default();
+        draw(&mut app, &mut screen);
+        assert!(hit_opt(&screen, Target::Copy(CopyId::SshName)).is_some());
+        assert!(hit_opt(&screen, Target::Copy(CopyId::SshId)).is_some());
+        app.activate_target(Target::Copy(CopyId::SshFingerprint));
+        assert_eq!(
+            app.last_copied.as_deref(),
+            Some("SHA256:abcdef0123456789")
+        );
+        assert!(app.prompt.is_none());
     }
 
     fn hit(screen: &Screen, target: Target) -> ratatui::layout::Rect {
